@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Calendar, Users, Clock, Truck, AlertCircle, MapPin } from 'lucide-react'
+import { Calendar, Users, Clock, Truck, AlertCircle, MapPin, TrendingUp, Activity, BarChart3, Zap } from 'lucide-react'
 import { apiFetch } from '@/lib/api'
 
 type Driver = {
@@ -70,18 +70,10 @@ export default function AnalyticsSection() {
       setError(null)
 
       try {
-        const token = localStorage.getItem('token')
-        if (!token) throw new Error('Missing token. Please sign in again.')
-
-        const headers: HeadersInit = {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        }
-
         const [driversRes, routesRes, vehiclesRes] = await Promise.all([
-          apiFetch('/drivers', { headers }),
-          apiFetch('/routes', { headers }),
-          apiFetch('/vehicles', { headers }),
+          apiFetch('/drivers', { credentials: "include" }),
+          apiFetch('/routes', { credentials: "include" }),
+          apiFetch('/vehicles', { credentials: "include" }),
         ])
 
         if (!driversRes.ok) throw new Error(`Drivers fetch failed (${driversRes.status})`)
@@ -98,9 +90,8 @@ export default function AnalyticsSection() {
         setRoutes(toArray(routesJson))
         setVehicles(toArray(vehiclesJson))
 
-        // Optional: bookings (only if your backend has it)
         try {
-          const bookingsRes = await apiFetch('/bookings/recent', { headers })
+          const bookingsRes = await apiFetch('/bookings/recent', { credentials: "include" })
           if (bookingsRes.ok) {
             const bookingsJson = await bookingsRes.json()
             setRecentBookings(toArray(bookingsJson))
@@ -125,12 +116,6 @@ export default function AnalyticsSection() {
     load()
   }, [])
 
-  /**
-   * Cards (must be valid backend-derived numbers)
-   * - Total Trips: use bookings if available; otherwise fall back to vehicles count (valid + real)
-   * - Active Users: drivers count (valid from /drivers)
-   * - On-Time Rate: computed proxy KPI = % vehicles assigned a driver (valid from /vehicles)
-   */
   const totalTrips = useMemo(() => {
     if (recentBookings.length > 0) return recentBookings.length
     return vehicles.length
@@ -142,10 +127,9 @@ export default function AnalyticsSection() {
     const total = vehicles.length
     if (!total) return 0
     const assigned = vehicles.filter(v => s(v.user_id).trim() !== '' && s(v.user_id) !== '0').length
-    return Math.round((assigned / total) * 1000) / 10 // 1 decimal
+    return Math.round((assigned / total) * 1000) / 10
   }, [vehicles])
 
-  // Bottom panels (all from backend)
   const routesWithVehicles = useMemo(() => {
     const set = new Set(vehicles.map(v => s(v.route_id)).filter(x => x.trim() !== '' && x !== '0'))
     return set.size
@@ -161,30 +145,45 @@ export default function AnalyticsSection() {
 
   if (loading) {
     return (
-      <Card className="border-border/50">
-        <CardHeader>
-          <CardTitle>Analytics</CardTitle>
-          <CardDescription>Loading data…</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="text-sm text-muted-foreground">Please wait.</div>
-        </CardContent>
-      </Card>
+      <div className="space-y-6">
+        <Card className="bg-gradient-to-br from-white to-gray-50 border border-gray-200/50 shadow-sm">
+          <CardHeader>
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600">
+                <BarChart3 className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <CardTitle className="text-lg font-semibold">Analytics Dashboard</CardTitle>
+                <CardDescription>Loading data...</CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center justify-center py-8">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     )
   }
 
   if (error) {
     return (
-      <Card className="border-border/50">
+      <Card className="bg-gradient-to-br from-white to-red-50 border border-red-100 shadow-sm">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <AlertCircle className="w-5 h-5" />
-            Analytics error
-          </CardTitle>
-          <CardDescription>{error}</CardDescription>
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-lg bg-gradient-to-br from-red-500 to-rose-600">
+              <AlertCircle className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <CardTitle className="text-lg font-semibold text-gray-900">Analytics Error</CardTitle>
+              <CardDescription className="text-red-600">{error}</CardDescription>
+            </div>
+          </div>
         </CardHeader>
         <CardContent>
-          <div className="text-sm text-muted-foreground">
+          <div className="text-sm text-gray-600 p-4 bg-red-50 rounded-lg border border-red-100">
             Check Network tab for <b>/drivers</b>, <b>/routes</b>, <b>/vehicles</b>.
           </div>
         </CardContent>
@@ -194,161 +193,260 @@ export default function AnalyticsSection() {
 
   return (
     <div className="space-y-6">
-      {/* Key Metrics (ONLY 3 CARDS) */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        <Card className="border-border/50">
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-base">Total Trips</CardTitle>
-              <Calendar className="w-5 h-5 text-blue-500" />
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            <p className="text-3xl font-bold text-foreground">{totalTrips}</p>
-            <p className="text-sm text-muted-foreground">
-              {recentBookings.length > 0 ? 'Recent bookings loaded' : 'Fallback: vehicles in fleet'}
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card className="border-border/50">
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-base">Active Users</CardTitle>
-              <Users className="w-5 h-5 text-purple-500" />
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            <p className="text-3xl font-bold text-foreground">{activeUsers}</p>
-            <p className="text-sm text-muted-foreground">Driver accounts (from database)</p>
-          </CardContent>
-        </Card>
-
-        <Card className="border-border/50">
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-base">On-Time Rate</CardTitle>
-              <Clock className="w-5 h-5 text-cyan-500" />
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            <p className="text-3xl font-bold text-foreground">{onTimeRate}%</p>
-            <p className="text-sm text-muted-foreground">% of vehicles assigned a driver</p>
-          </CardContent>
-        </Card>
+      {/* Analytics Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="p-2 rounded-lg bg-gradient-to-br from-purple-500 to-violet-600">
+            <BarChart3 className="w-6 h-6 text-white" />
+          </div>
+          <div>
+            <h2 className="text-xl font-bold text-gray-900">Performance Analytics</h2>
+            <p className="text-sm text-gray-500">Real-time insights and metrics</p>
+          </div>
+        </div>
+        <Badge className="bg-gradient-to-r from-emerald-500 to-teal-600 text-white">
+          <Activity className="w-3 h-3 mr-1" /> Live Data
+        </Badge>
       </div>
 
-      {/* Bottom replaced with backend-driven panels */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Operations Summary */}
-        <Card className="border-border/50 lg:col-span-1">
-          <CardHeader>
-            <CardTitle className="text-base">Operations Summary</CardTitle>
-            <CardDescription>Computed from DB fleet data</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Fleet capacity</span>
-              <Badge variant="outline">{totalFleetCapacity}</Badge>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Routes with vehicles</span>
-              <Badge variant="outline">{routesWithVehicles}</Badge>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Unassigned vehicles</span>
-              <Badge variant="outline">{unassignedVehicles}</Badge>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Total routes</span>
-              <Badge variant="outline">{routes.length}</Badge>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Latest Vehicles */}
-        <Card className="border-border/50 lg:col-span-2">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Truck className="w-5 h-5" />
-              Latest Vehicles
-            </CardTitle>
-            <CardDescription>Top 6 vehicles from the database</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {vehicles.length === 0 ? (
-              <div className="text-sm text-muted-foreground">No vehicles found.</div>
-            ) : (
-              vehicles.slice(0, 6).map(v => (
-                <div
-                  key={v.id}
-                  className="flex items-center justify-between p-3 bg-card border border-border/50 rounded-lg hover:bg-muted/50 transition-colors"
-                >
-                  <div className="flex-1">
-                    <p className="font-semibold text-sm text-foreground">{v.license_plate}</p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {v.model} • capacity {v.capacity} • route {s(v.route_id)} • driver {s(v.user_id) || '—'}
-                    </p>
+      {/* Key Metrics */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <Card className="bg-gradient-to-br from-white to-blue-50 border border-blue-100 shadow-sm hover:shadow-md transition-shadow duration-300">
+          <CardContent className="pt-6">
+            <div className="flex items-start justify-between">
+              <div>
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="p-2 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600">
+                    <Calendar className="w-4 h-4 text-white" />
                   </div>
-                  <Badge variant="outline">
-                    {s((v as any).status) || (s(v.user_id).trim() ? 'Assigned' : 'Unassigned')}
-                  </Badge>
+                  <span className="text-sm font-medium text-blue-700">Total Trips</span>
                 </div>
-              ))
-            )}
+                <p className="text-3xl font-bold text-gray-900">{totalTrips}</p>
+                <p className="text-xs text-gray-500 mt-2">
+                  {recentBookings.length > 0 ? 'Recent bookings' : 'Total fleet vehicles'}
+                </p>
+              </div>
+              <TrendingUp className="w-8 h-8 text-blue-400/40" />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-gradient-to-br from-white to-purple-50 border border-purple-100 shadow-sm hover:shadow-md transition-shadow duration-300">
+          <CardContent className="pt-6">
+            <div className="flex items-start justify-between">
+              <div>
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="p-2 rounded-lg bg-gradient-to-br from-purple-500 to-violet-600">
+                    <Users className="w-4 h-4 text-white" />
+                  </div>
+                  <span className="text-sm font-medium text-purple-700">Active Users</span>
+                </div>
+                <p className="text-3xl font-bold text-gray-900">{activeUsers}</p>
+                <p className="text-xs text-gray-500 mt-2">Driver accounts in system</p>
+              </div>
+              <Users className="w-8 h-8 text-purple-400/40" />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-gradient-to-br from-white to-cyan-50 border border-cyan-100 shadow-sm hover:shadow-md transition-shadow duration-300">
+          <CardContent className="pt-6">
+            <div className="flex items-start justify-between">
+              <div>
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="p-2 rounded-lg bg-gradient-to-br from-cyan-500 to-sky-600">
+                    <Clock className="w-4 h-4 text-white" />
+                  </div>
+                  <span className="text-sm font-medium text-cyan-700">On-Time Rate</span>
+                </div>
+                <p className="text-3xl font-bold text-gray-900">{onTimeRate}%</p>
+                <p className="text-xs text-gray-500 mt-2">Vehicles with assigned drivers</p>
+              </div>
+              <Clock className="w-8 h-8 text-cyan-400/40" />
+            </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* Latest Drivers + Latest Routes */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card className="border-border/50">
+      {/* Operations Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <Card className="bg-gradient-to-br from-white to-emerald-50 border border-emerald-100 lg:col-span-1">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Users className="w-5 h-5" />
-              Latest Drivers
-            </CardTitle>
-            <CardDescription>Top 6 driver accounts</CardDescription>
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600">
+                <Zap className="w-4 h-4 text-white" />
+              </div>
+              <CardTitle className="text-base font-semibold">Operations Summary</CardTitle>
+            </div>
+            <CardDescription>System performance metrics</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-3">
-            {drivers.length === 0 ? (
-              <div className="text-sm text-muted-foreground">No drivers found.</div>
-            ) : (
-              drivers.slice(0, 6).map(d => (
-                <div key={d.id} className="p-3 rounded-lg bg-muted/30 border border-border/50">
-                  <p className="font-semibold text-foreground">{d.name}</p>
-                  <p className="text-xs text-muted-foreground mt-1">{d.email}</p>
-                  <p className="text-xs text-muted-foreground">{d.phone_number}</p>
-                </div>
-              ))
-            )}
+          <CardContent className="space-y-4">
+            <div className="flex items-center justify-between p-3 bg-white/50 rounded-lg border border-emerald-100">
+              <span className="text-sm font-medium text-gray-700">Fleet Capacity</span>
+              <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200">{totalFleetCapacity}</Badge>
+            </div>
+            <div className="flex items-center justify-between p-3 bg-white/50 rounded-lg border border-emerald-100">
+              <span className="text-sm font-medium text-gray-700">Routes with Vehicles</span>
+              <Badge className="bg-blue-100 text-blue-800 border-blue-200">{routesWithVehicles}</Badge>
+            </div>
+            <div className="flex items-center justify-between p-3 bg-white/50 rounded-lg border border-emerald-100">
+              <span className="text-sm font-medium text-gray-700">Unassigned Vehicles</span>
+              <Badge className="bg-amber-100 text-amber-800 border-amber-200">{unassignedVehicles}</Badge>
+            </div>
+            <div className="flex items-center justify-between p-3 bg-white/50 rounded-lg border border-emerald-100">
+              <span className="text-sm font-medium text-gray-700">Total Routes</span>
+              <Badge className="bg-purple-100 text-purple-800 border-purple-200">{routes.length}</Badge>
+            </div>
           </CardContent>
         </Card>
 
-        <Card className="border-border/50">
+        <Card className="bg-gradient-to-br from-white to-orange-50 border border-orange-100 lg:col-span-2">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <MapPin className="w-5 h-5" />
-              Latest Routes
-            </CardTitle>
-            <CardDescription>Top 5 routes from the database</CardDescription>
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-gradient-to-br from-orange-500 to-amber-600">
+                <Truck className="w-5 h-5 text-white" />
+              </div>
+              <div className="flex-1">
+                <CardTitle className="text-base font-semibold">Latest Vehicles</CardTitle>
+                <CardDescription>Recently added fleet vehicles</CardDescription>
+              </div>
+              <Badge className="bg-orange-100 text-orange-800 border-orange-200">
+                {vehicles.length} Total
+              </Badge>
+            </div>
           </CardHeader>
-          <CardContent className="space-y-3">
-            {routes.length === 0 ? (
-              <div className="text-sm text-muted-foreground">No routes found.</div>
-            ) : (
-              routes.slice(0, 5).map(r => (
-                <div key={r.id} className="p-3 rounded-lg bg-muted/30 border border-border/50">
-                  <p className="font-semibold text-foreground">{r.name}</p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {r.starting_point} → {r.ending_point}
-                  </p>
-                  <Badge variant="outline" className="mt-2">
-                    {s((r as any).status) || 'Active'}
-                  </Badge>
+          <CardContent>
+            <div className="space-y-3">
+              {vehicles.length === 0 ? (
+                <div className="text-center py-8 text-gray-500">
+                  <Truck className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+                  <p>No vehicles found</p>
                 </div>
-              ))
-            )}
+              ) : (
+                vehicles.slice(0, 6).map(v => (
+                  <div
+                    key={v.id}
+                    className="flex items-center justify-between p-4 bg-white/70 rounded-xl border border-gray-100 hover:border-orange-200 transition-all duration-300 group hover:shadow-sm"
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className="p-2 rounded-lg bg-gradient-to-br from-orange-100 to-amber-100">
+                        <Truck className="w-5 h-5 text-orange-600" />
+                      </div>
+                      <div>
+                        <p className="font-semibold text-gray-900">{v.license_plate}</p>
+                        <p className="text-xs text-gray-500">
+                          {v.model} • {v.capacity} seats • Route {s(v.route_id)}
+                        </p>
+                      </div>
+                    </div>
+                    <Badge 
+                      className={`${s(v.user_id).trim() ? 'bg-emerald-100 text-emerald-800 border-emerald-200' : 'bg-gray-100 text-gray-800 border-gray-200'}`}
+                    >
+                      {s(v.user_id).trim() ? 'Assigned' : 'Unassigned'}
+                    </Badge>
+                  </div>
+                ))
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Drivers & Routes Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card className="bg-gradient-to-br from-white to-indigo-50 border border-indigo-100">
+          <CardHeader>
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-gradient-to-br from-indigo-500 to-blue-600">
+                <Users className="w-5 h-5 text-white" />
+              </div>
+              <div className="flex-1">
+                <CardTitle className="text-base font-semibold">Latest Drivers</CardTitle>
+                <CardDescription>Recently added driver accounts</CardDescription>
+              </div>
+              <Badge className="bg-indigo-100 text-indigo-800 border-indigo-200">
+                {drivers.length} Total
+              </Badge>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {drivers.length === 0 ? (
+                <div className="text-center py-8 text-gray-500">
+                  <Users className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+                  <p>No drivers found</p>
+                </div>
+              ) : (
+                drivers.slice(0, 6).map(d => (
+                  <div
+                    key={d.id}
+                    className="p-4 rounded-xl bg-white/70 border border-gray-100 hover:border-indigo-200 transition-all duration-300 group hover:shadow-sm"
+                  >
+                    <p className="font-semibold text-gray-900">{d.name}</p>
+                    <div className="flex items-center gap-4 mt-2 text-xs text-gray-500">
+                      <span className="flex items-center gap-1">
+                        <Calendar className="w-3 h-3" /> {d.email}
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <Clock className="w-3 h-3" /> {d.phone_number}
+                      </span>
+                    </div>
+                    <Badge className="mt-2 bg-gradient-to-r from-indigo-100 to-blue-100 text-indigo-800 border-indigo-200">
+                      {s(d.status) || 'Active'}
+                    </Badge>
+                  </div>
+                ))
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-gradient-to-br from-white to-rose-50 border border-rose-100">
+          <CardHeader>
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-gradient-to-br from-rose-500 to-pink-600">
+                <MapPin className="w-5 h-5 text-white" />
+              </div>
+              <div className="flex-1">
+                <CardTitle className="text-base font-semibold">Latest Routes</CardTitle>
+                <CardDescription>Recently configured routes</CardDescription>
+              </div>
+              <Badge className="bg-rose-100 text-rose-800 border-rose-200">
+                {routes.length} Total
+              </Badge>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {routes.length === 0 ? (
+                <div className="text-center py-8 text-gray-500">
+                  <MapPin className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+                  <p>No routes found</p>
+                </div>
+              ) : (
+                routes.slice(0, 5).map(r => (
+                  <div
+                    key={r.id}
+                    className="p-4 rounded-xl bg-white/70 border border-gray-100 hover:border-rose-200 transition-all duration-300 group hover:shadow-sm"
+                  >
+                    <p className="font-semibold text-gray-900">{r.name}</p>
+                    <div className="flex items-center gap-4 mt-2 text-xs text-gray-500">
+                      <div className="flex items-center gap-1">
+                        <MapPin className="w-3 h-3" />
+                        <span className="font-medium">From:</span> {r.starting_point}
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <MapPin className="w-3 h-3" />
+                        <span className="font-medium">To:</span> {r.ending_point}
+                      </div>
+                    </div>
+                    <Badge className="mt-2 bg-gradient-to-r from-rose-100 to-pink-100 text-rose-800 border-rose-200">
+                      {s(r.status) || 'Active'}
+                    </Badge>
+                  </div>
+                ))
+              )}
+            </div>
           </CardContent>
         </Card>
       </div>
