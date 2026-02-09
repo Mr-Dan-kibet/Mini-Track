@@ -46,6 +46,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
 } from '@/components/ui/dialog'
 import dynamic from 'next/dynamic'
 
@@ -63,11 +64,22 @@ function getCurrentUserId(): number | null {
   return userId ? parseInt(userId, 10) : null
 }
 
+// ✅ ADD ROUTE GEOFENCE TYPE
+type RouteGeofence = {
+  starting_point_gps: string | null
+  ending_point_gps: string | null
+  route_radius_km: number
+}
+
+// ✅ UPDATED Route TYPE
 type Route = {
   id: number
   name: string
   starting_point: string
   ending_point: string
+  starting_point_gps?: string | null
+  ending_point_gps?: string | null
+  route_radius_km?: number
 }
 
 type PickupLocation = {
@@ -159,6 +171,9 @@ export default function BookingFlow() {
   const [success, setSuccess] = useState(false)
   const [redirectCountdown, setRedirectCountdown] = useState(5)
 
+  // ✅ ADD STATE FOR SELECTED ROUTE GEOFENCE
+  const [selectedRouteGeofence, setSelectedRouteGeofence] = useState<RouteGeofence | null>(null)
+
   // Map picker state
   const [showPickupMapPicker, setShowPickupMapPicker] = useState(false)
   const [showDropoffMapPicker, setShowDropoffMapPicker] = useState(false)
@@ -218,6 +233,7 @@ export default function BookingFlow() {
     try {
       const res = await apiFetch('/routes')
       const data = await res.json()
+      // Routes now include geofence data from backend
       setRoutes(Array.isArray(data) ? data : [])
     } catch (err) {
       console.error('Failed to fetch routes', err)
@@ -752,6 +768,18 @@ export default function BookingFlow() {
                   setForm({ ...form, route_id: val, pickup_location_id: '', dropoff_location_id: '' })
                   setCustomPickupLocation(null)
                   setCustomDropoffLocation(null)
+                  
+                  // ✅ SET GEOFENCE DATA FOR SELECTED ROUTE
+                  const selectedRoute = routes.find(r => String(r.id) === val)
+                  if (selectedRoute) {
+                    setSelectedRouteGeofence({
+                      starting_point_gps: selectedRoute.starting_point_gps || null,
+                      ending_point_gps: selectedRoute.ending_point_gps || null,
+                      route_radius_km: selectedRoute.route_radius_km || 5.0
+                    })
+                  } else {
+                    setSelectedRouteGeofence(null)
+                  }
                 }}>
                   <SelectTrigger className="h-12 border-slate-300">
                     <SelectValue placeholder="Choose your route" />
@@ -770,6 +798,20 @@ export default function BookingFlow() {
                   </SelectContent>
                 </Select>
               </div>
+
+              {/* ✅ SHOW GEOFENCE INFO IF ACTIVE */}
+              {selectedRouteGeofence && selectedRouteGeofence.starting_point_gps && (
+                <Alert className="bg-blue-50 border-blue-200">
+                  <Info className="h-5 w-5 text-blue-600" />
+                  <AlertDescription className="ml-2 text-blue-900">
+                    <div className="font-semibold mb-1">Route Geofence Active</div>
+                    <div className="text-sm">
+                      Custom locations must be within {selectedRouteGeofence.route_radius_km}km of the{' '}
+                      {routes.find(r => String(r.id) === form.route_id)?.name} corridor.
+                    </div>
+                  </AlertDescription>
+                </Alert>
+              )}
 
               {form.route_id && (
                 <>
@@ -1277,14 +1319,20 @@ export default function BookingFlow() {
           </Card>
         )}
 
-        {/* Map Picker Dialogs */}
+        {/* ✅ UPDATED Map Picker Dialogs WITH GEOFENCE */}
         <Dialog open={showPickupMapPicker} onOpenChange={setShowPickupMapPicker}>
           <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Select Pickup Location</DialogTitle>
+              {selectedRouteGeofence && selectedRouteGeofence.starting_point_gps && (
+                <DialogDescription>
+                  Location must be within {selectedRouteGeofence.route_radius_km}km of the route corridor
+                </DialogDescription>
+              )}
             </DialogHeader>
             <LocationPicker
               type="pickup"
+              routeGeofence={selectedRouteGeofence}
               onLocationConfirm={(location) => {
                 setCustomPickupLocation({
                   name: location.name || 'Custom Pickup Location',
@@ -1302,9 +1350,15 @@ export default function BookingFlow() {
           <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Select Dropoff Location</DialogTitle>
+              {selectedRouteGeofence && selectedRouteGeofence.starting_point_gps && (
+                <DialogDescription>
+                  Location must be within {selectedRouteGeofence.route_radius_km}km of the route corridor
+                </DialogDescription>
+              )}
             </DialogHeader>
             <LocationPicker
               type="dropoff"
+              routeGeofence={selectedRouteGeofence}
               onLocationConfirm={(location) => {
                 setCustomDropoffLocation({
                   name: location.name || 'Custom School Location',
