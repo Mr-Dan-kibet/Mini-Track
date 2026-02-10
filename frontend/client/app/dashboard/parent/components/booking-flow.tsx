@@ -46,6 +46,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
 } from '@/components/ui/dialog'
 import dynamic from 'next/dynamic'
 
@@ -63,11 +64,22 @@ function getCurrentUserId(): number | null {
   return userId ? parseInt(userId, 10) : null
 }
 
+// ✅ ADD ROUTE GEOFENCE TYPE
+type RouteGeofence = {
+  starting_point_gps: string | null
+  ending_point_gps: string | null
+  route_radius_km: number
+}
+
+// ✅ UPDATED Route TYPE
 type Route = {
   id: number
   name: string
   starting_point: string
   ending_point: string
+  starting_point_gps?: string | null
+  ending_point_gps?: string | null
+  route_radius_km?: number
 }
 
 type PickupLocation = {
@@ -98,6 +110,7 @@ type Booking = {
   start_date: string
   end_date: string
   seats_booked: number
+  service_type: string  // ✅ ADDED - critical for service type checking
   selected_seats?: number[]
 }
 
@@ -159,6 +172,9 @@ export default function BookingFlow() {
   const [success, setSuccess] = useState(false)
   const [redirectCountdown, setRedirectCountdown] = useState(5)
 
+  // ✅ ADD STATE FOR SELECTED ROUTE GEOFENCE
+  const [selectedRouteGeofence, setSelectedRouteGeofence] = useState<RouteGeofence | null>(null)
+
   // Map picker state
   const [showPickupMapPicker, setShowPickupMapPicker] = useState(false)
   const [showDropoffMapPicker, setShowDropoffMapPicker] = useState(false)
@@ -196,11 +212,12 @@ export default function BookingFlow() {
     }
   }, [form.route_id])
 
+  // ✅ UPDATED: Added form.service_type dependency
   useEffect(() => {
-    if (selectedVehicle && form.selected_dates.length > 0) {
+    if (selectedVehicle && form.selected_dates.length > 0 && form.service_type) {
       fetchAvailableSeats()
     }
-  }, [selectedVehicle, form.selected_dates])
+  }, [selectedVehicle, form.selected_dates, form.service_type])
 
   // Auto-redirect countdown after successful booking
   useEffect(() => {
@@ -218,6 +235,7 @@ export default function BookingFlow() {
     try {
       const res = await apiFetch('/routes')
       const data = await res.json()
+      // Routes now include geofence data from backend
       setRoutes(Array.isArray(data) ? data : [])
     } catch (err) {
       console.error('Failed to fetch routes', err)
@@ -268,8 +286,9 @@ export default function BookingFlow() {
     }
   }
 
+  // ✅ UPDATED: Service-type-aware seat availability checking
   const fetchAvailableSeats = async () => {
-    if (!selectedVehicle || form.selected_dates.length === 0) return
+    if (!selectedVehicle || form.selected_dates.length === 0 || !form.service_type) return
 
     setLoadingSeats(true)
     try {
@@ -278,9 +297,13 @@ export default function BookingFlow() {
       
       const bookings: Booking[] = Array.isArray(data) ? data : []
       
+      // ✅ Calculate availability by service type
       let maxBookedSeats = 0
       
       form.selected_dates.forEach(selectedDate => {
+        let morningSeats = 0
+        let eveningSeats = 0
+        
         const dateBookings = bookings.filter((booking: Booking) => {
           if (booking.status !== 'active') return false
           
@@ -291,12 +314,42 @@ export default function BookingFlow() {
           return checkDate >= bookingStart && checkDate <= bookingEnd
         })
         
-        const totalSeatsOnDate = dateBookings.reduce((sum, b) => sum + b.seats_booked, 0)
-        maxBookedSeats = Math.max(maxBookedSeats, totalSeatsOnDate)
+        // ✅ Count seats by service type
+        dateBookings.forEach(booking => {
+          const seats = booking.seats_booked || 0
+          
+          if (booking.service_type === 'morning' || booking.service_type === 'both') {
+            morningSeats += seats
+          }
+          if (booking.service_type === 'evening' || booking.service_type === 'both') {
+            eveningSeats += seats
+          }
+        })
+        
+        // ✅ Calculate max based on what user is booking
+        let seatsUsedForThisDate = 0
+        
+        if (form.service_type === 'morning') {
+          seatsUsedForThisDate = morningSeats
+        } else if (form.service_type === 'evening') {
+          seatsUsedForThisDate = eveningSeats
+        } else if (form.service_type === 'both') {
+          // For 'both', need seats in BOTH time slots
+          seatsUsedForThisDate = Math.max(morningSeats, eveningSeats)
+        }
+        
+        maxBookedSeats = Math.max(maxBookedSeats, seatsUsedForThisDate)
       })
       
       const available = selectedVehicle.capacity - maxBookedSeats
       setAvailableSeats(Math.max(0, available))
+      
+      console.log('📊 Seat availability:', {
+        service_type: form.service_type,
+        capacity: selectedVehicle.capacity,
+        max_booked: maxBookedSeats,
+        available: available
+      })
       
       if (form.seats_booked > available) {
         setForm(prev => ({ ...prev, seats_booked: Math.max(1, available) }))
@@ -380,9 +433,13 @@ export default function BookingFlow() {
   }
 
   const isDateSelected = (date: Date) => {
-    const dateStr = date.toISOString().split('T')[0]
-    return form.selected_dates.includes(dateStr)
-  }
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  const dateStr = `${year}-${month}-${day}`
+  
+  return form.selected_dates.includes(dateStr)
+}
 
   const isDateDisabled = (date: Date) => {
     const today = new Date()
@@ -393,8 +450,11 @@ export default function BookingFlow() {
   const toggleDate = (date: Date) => {
     if (isDateDisabled(date)) return
     
-    const dateStr = date.toISOString().split('T')[0]
-    
+  const year = date.getFullYear()           // 2026
+  const month = String(date.getMonth() + 1).padStart(2, '0')  // "02"
+  const day = String(date.getDate()).padStart(2, '0')         // "10"
+  const dateStr = `${year}-${month}-${day}`  // "2026-02-10" ✅
+
     setForm(prev => {
       const isSelected = prev.selected_dates.includes(dateStr)
       const newDates = isSelected
@@ -752,6 +812,18 @@ export default function BookingFlow() {
                   setForm({ ...form, route_id: val, pickup_location_id: '', dropoff_location_id: '' })
                   setCustomPickupLocation(null)
                   setCustomDropoffLocation(null)
+                  
+                  // ✅ SET GEOFENCE DATA FOR SELECTED ROUTE
+                  const selectedRoute = routes.find(r => String(r.id) === val)
+                  if (selectedRoute) {
+                    setSelectedRouteGeofence({
+                      starting_point_gps: selectedRoute.starting_point_gps || null,
+                      ending_point_gps: selectedRoute.ending_point_gps || null,
+                      route_radius_km: selectedRoute.route_radius_km || 5.0
+                    })
+                  } else {
+                    setSelectedRouteGeofence(null)
+                  }
                 }}>
                   <SelectTrigger className="h-12 border-slate-300">
                     <SelectValue placeholder="Choose your route" />
@@ -770,6 +842,20 @@ export default function BookingFlow() {
                   </SelectContent>
                 </Select>
               </div>
+
+              {/* ✅ SHOW GEOFENCE INFO IF ACTIVE */}
+              {selectedRouteGeofence && selectedRouteGeofence.starting_point_gps && (
+                <Alert className="bg-blue-50 border-blue-200">
+                  <Info className="h-5 w-5 text-blue-600" />
+                  <AlertDescription className="ml-2 text-blue-900">
+                    <div className="font-semibold mb-1">Route Geofence Active</div>
+                    <div className="text-sm">
+                      Custom locations must be within {selectedRouteGeofence.route_radius_km}km of the{' '}
+                      {routes.find(r => String(r.id) === form.route_id)?.name} corridor.
+                    </div>
+                  </AlertDescription>
+                </Alert>
+              )}
 
               {form.route_id && (
                 <>
@@ -1277,14 +1363,20 @@ export default function BookingFlow() {
           </Card>
         )}
 
-        {/* Map Picker Dialogs */}
+        {/* ✅ UPDATED Map Picker Dialogs WITH GEOFENCE */}
         <Dialog open={showPickupMapPicker} onOpenChange={setShowPickupMapPicker}>
           <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Select Pickup Location</DialogTitle>
+              {selectedRouteGeofence && selectedRouteGeofence.starting_point_gps && (
+                <DialogDescription>
+                  Location must be within {selectedRouteGeofence.route_radius_km}km of the route corridor
+                </DialogDescription>
+              )}
             </DialogHeader>
             <LocationPicker
               type="pickup"
+              routeGeofence={selectedRouteGeofence}
               onLocationConfirm={(location) => {
                 setCustomPickupLocation({
                   name: location.name || 'Custom Pickup Location',
@@ -1302,9 +1394,15 @@ export default function BookingFlow() {
           <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Select Dropoff Location</DialogTitle>
+              {selectedRouteGeofence && selectedRouteGeofence.starting_point_gps && (
+                <DialogDescription>
+                  Location must be within {selectedRouteGeofence.route_radius_km}km of the route corridor
+                </DialogDescription>
+              )}
             </DialogHeader>
             <LocationPicker
               type="dropoff"
+              routeGeofence={selectedRouteGeofence}
               onLocationConfirm={(location) => {
                 setCustomDropoffLocation({
                   name: location.name || 'Custom School Location',
