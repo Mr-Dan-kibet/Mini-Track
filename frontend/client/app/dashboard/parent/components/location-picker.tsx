@@ -6,13 +6,9 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
-import { MapPin, Search, Navigation, CheckCircle2, Loader2, X, AlertCircle } from 'lucide-react'
+import { MapPin, Search, CheckCircle2, Loader2, X, AlertCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-
-// You'll need to install these:
-// npm install leaflet react-leaflet
-// npm install -D @types/leaflet
 
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet'
 import L from 'leaflet'
@@ -77,6 +73,96 @@ type SearchResult = {
   }
 }
 
+type RouteGeofence = {
+  starting_point_gps: string | null
+  ending_point_gps: string | null
+  route_radius_km: number
+}
+
+// GEOFENCE VALIDATION FUNCTION
+function validateLocationGeofence(
+  locationGps: string,
+  geofence: RouteGeofence
+): { isValid: boolean; errorMessage: string; distance: number | null } {
+  // If no geofence data, allow all locations
+  if (!geofence.starting_point_gps || !geofence.ending_point_gps) {
+    return { isValid: true, errorMessage: '', distance: null }
+  }
+
+  const [lat, lng] = locationGps.split(',').map(parseFloat)
+  const [startLat, startLng] = geofence.starting_point_gps.split(',').map(parseFloat)
+  const [endLat, endLng] = geofence.ending_point_gps.split(',').map(parseFloat)
+
+  // Calculate distance from location to route line
+  const distance = pointToLineDistance(
+    lat, lng,
+    startLat, startLng,
+    endLat, endLng
+  )
+
+  const isValid = distance <= geofence.route_radius_km
+
+  return {
+    isValid,
+    errorMessage: isValid 
+      ? ''
+      : `This location is ${distance.toFixed(1)}km from the route. Please select a location within ${geofence.route_radius_km}km of the route corridor.`,
+    distance
+  }
+}
+
+// Haversine distance formula
+function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371 // Earth's radius in km
+  const dLat = toRad(lat2 - lat1)
+  const dLon = toRad(lon2 - lon1)
+  const a = 
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2)
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+  return R * c
+}
+
+function toRad(degrees: number): number {
+  return degrees * (Math.PI / 180)
+}
+
+// Calculate perpendicular distance from point to line segment
+function pointToLineDistance(
+  px: number, py: number,
+  x1: number, y1: number,
+  x2: number, y2: number
+): number {
+  const A = px - x1
+  const B = py - y1
+  const C = x2 - x1
+  const D = y2 - y1
+
+  const dot = A * C + B * D
+  const lenSq = C * C + D * D
+  let param = -1
+
+  if (lenSq !== 0) {
+    param = dot / lenSq
+  }
+
+  let xx, yy
+
+  if (param < 0) {
+    xx = x1
+    yy = y1
+  } else if (param > 1) {
+    xx = x2
+    yy = y2
+  } else {
+    xx = x1 + param * C
+    yy = y1 + param * D
+  }
+
+  return haversineDistance(px, py, xx, yy)
+}
+
 // Component to handle map events and update view
 function MapController({ 
   center, 
@@ -89,12 +175,10 @@ function MapController({
 }) {
   const map = useMap()
 
-  // Update map view when center changes
   useEffect(() => {
     map.setView(center, zoom, { animate: true, duration: 1 })
   }, [center, zoom, map])
 
-  // Handle map clicks
   useEffect(() => {
     const handleClick = (e: L.LeafletMouseEvent) => {
       onMapClick(e.latlng.lat, e.latlng.lng)
@@ -114,16 +198,18 @@ type LocationPickerProps = {
   onLocationConfirm: (location: Location) => void
   type: 'pickup' | 'dropoff'
   title?: string
+  routeGeofence?: RouteGeofence | null
 }
 
 export default function LocationPicker({ 
   initialLocation, 
   onLocationConfirm, 
   type,
-  title 
+  title,
+  routeGeofence
 }: LocationPickerProps) {
   const [center, setCenter] = useState<[number, number]>(
-    initialLocation ? [initialLocation.lat, initialLocation.lng] : [-1.286389, 36.817223] // Nairobi default
+    initialLocation ? [initialLocation.lat, initialLocation.lng] : [-1.286389, 36.817223]
   )
   const [zoom, setZoom] = useState(13)
   const [selectedLocation, setSelectedLocation] = useState<Location | null>(initialLocation || null)
@@ -135,16 +221,18 @@ export default function LocationPicker({
   const [searchError, setSearchError] = useState<string | null>(null)
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
+  const [geofenceError, setGeofenceError] = useState<string | null>(null)
+  const [validationDistance, setValidationDistance] = useState<number | null>(null)
+
   const markerIcon = type === 'pickup' ? pickupIcon : dropoffIcon
 
-  // Debug log for search results visibility
   useEffect(() => {
     if (showResults && searchResults.length > 0) {
       console.log('Dropdown should be visible with', searchResults.length, 'results')
     }
   }, [showResults, searchResults])
 
-  // Debounced search function
+  // Debounced search
   useEffect(() => {
     if (searchQuery.length < 3) {
       setSearchResults([])
@@ -159,7 +247,7 @@ export default function LocationPicker({
 
     searchTimeoutRef.current = setTimeout(() => {
       searchLocation(searchQuery)
-    }, 800) // Increased debounce time to reduce API calls
+    }, 800)
 
     return () => {
       if (searchTimeoutRef.current) {
@@ -172,74 +260,68 @@ export default function LocationPicker({
     setIsSearching(true)
     setSearchError(null)
     
-    console.log('Searching for:', query) // Debug log
+    console.log('Searching for:', query)
     
     try {
-      // Using Photon API - most reliable for geocoding
-      const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&lat=-1.286389&lon=36.817223&limit=8`
-      console.log('Fetching from:', url) // Debug log
+      // Use Nominatim instead of Photon - better CORS support
+      const url = `https://nominatim.openstreetmap.org/search?` +
+        `format=json&` +
+        `q=${encodeURIComponent(query)}&` +
+        `countrycodes=ke&` +
+        `limit=8&` +
+        `addressdetails=1`
+      
+      console.log('Fetching from:', url)
       
       const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), 15000) // 15 second timeout
+      const timeoutId = setTimeout(() => controller.abort(), 10000)
       
       const response = await fetch(url, {
         signal: controller.signal,
         headers: {
           'Accept': 'application/json',
+          'User-Agent': 'SchoolBusBookingApp/1.0',
         }
       })
       
       clearTimeout(timeoutId)
       
-      console.log('Response status:', response.status) // Debug log
+      console.log('Response status:', response.status)
       
       if (!response.ok) {
         throw new Error(`Search failed with status: ${response.status}`)
       }
       
-      const photonData = await response.json()
-      console.log('Search results:', photonData) // Debug log
+      const nominatimData = await response.json()
+      console.log('Search results:', nominatimData)
       
-      // Convert Photon format to our format
-      const results: SearchResult[] = photonData.features?.map((feature: any, index: number) => {
-        const props = feature.properties
-        const coords = feature.geometry.coordinates
-        
-        // Build display name from available properties
-        const nameParts = [
-          props.name,
-          props.street,
-          props.city || props.county,
-          'Kenya'
-        ].filter(Boolean)
-        
+      const results: SearchResult[] = nominatimData.map((item: any, index: number) => {
         return {
-          place_id: props.osm_id || index,
-          display_name: nameParts.join(', '),
-          lat: String(coords[1]),
-          lon: String(coords[0]),
-          name: props.name || props.street || 'Location',
+          place_id: item.place_id || index,
+          display_name: item.display_name,
+          lat: String(item.lat),
+          lon: String(item.lon),
+          name: item.name || item.address?.road || item.display_name.split(',')[0],
           address: {
-            road: props.street,
-            suburb: props.district,
-            city: props.city,
-            county: props.county,
+            road: item.address?.road,
+            suburb: item.address?.suburb,
+            city: item.address?.city,
+            county: item.address?.county,
           }
         }
-      }) || []
+      })
       
-      console.log('Processed results:', results.length, 'locations') // Debug log
+      console.log('Processed results:', results.length, 'locations')
       
       if (results.length === 0) {
-        setSearchError(`No results found for "${query}". Try a different search term like "Westlands" or "Karen".`)
+        setSearchError(`No results found for "${query}". Try "Westlands", "Karen", or "Nairobi".`)
         setSearchResults([])
         setShowResults(false)
       } else {
-        console.log('Setting search results and showing dropdown') // Debug log
-        // Set results first, then show them
+        console.log('Setting search results and showing dropdown')
         setSearchResults(results)
         setShowResults(true)
-        console.log('Dropdown should now be visible') // Debug log
+        console.log('Dropdown should now be visible')
       }
       
     } catch (error: any) {
@@ -262,17 +344,32 @@ export default function LocationPicker({
     const lat = parseFloat(result.lat)
     const lng = parseFloat(result.lon)
     
-    // Extract a clean name from the result
+    // Validate geofence
+    if (routeGeofence) {
+      const validation = validateLocationGeofence(
+        `${lat},${lng}`,
+        routeGeofence
+      )
+      
+      if (!validation.isValid) {
+        setGeofenceError(validation.errorMessage)
+        setValidationDistance(validation.distance)
+        setShowResults(false)
+        return
+      } else {
+        setGeofenceError(null)
+        setValidationDistance(validation.distance)
+      }
+    }
+    
     const locationName = result.name || 
                          result.address?.road || 
                          result.address?.suburb ||
                          result.display_name.split(',')[0]
     
-    // Update map position with zoom
     setCenter([lat, lng])
-    setZoom(17) // Zoom in closer when selecting from search
+    setZoom(17)
     
-    // Set the location
     setSelectedLocation({
       lat,
       lng,
@@ -280,7 +377,6 @@ export default function LocationPicker({
       name: locationName
     })
     
-    // Close search results
     setShowResults(false)
     setSearchQuery('')
     setSearchError(null)
@@ -289,7 +385,24 @@ export default function LocationPicker({
   const handleMapClick = async (lat: number, lng: number) => {
     setIsReverseGeocoding(true)
     
-    // Immediately set the location with coordinates
+    // Validate geofence
+    if (routeGeofence) {
+      const validation = validateLocationGeofence(
+        `${lat},${lng}`,
+        routeGeofence
+      )
+      
+      if (!validation.isValid) {
+        setGeofenceError(validation.errorMessage)
+        setValidationDistance(validation.distance)
+        setIsReverseGeocoding(false)
+        return
+      } else {
+        setGeofenceError(null)
+        setValidationDistance(validation.distance)
+      }
+    }
+    
     setSelectedLocation({
       lat,
       lng,
@@ -297,15 +410,18 @@ export default function LocationPicker({
       name: 'Selected Location'
     })
     
-    // Then fetch the address using Photon reverse geocoding
+    // Reverse geocoding with Nominatim
     try {
       const response = await fetch(
-        `https://photon.komoot.io/reverse?` +
+        `https://nominatim.openstreetmap.org/reverse?` +
+        `format=json&` +
         `lat=${lat}&` +
-        `lon=${lng}`,
+        `lon=${lng}&` +
+        `addressdetails=1`,
         {
           headers: {
             'Accept': 'application/json',
+            'User-Agent': 'SchoolBusBookingApp/1.0',
           },
           signal: AbortSignal.timeout(10000)
         }
@@ -316,79 +432,23 @@ export default function LocationPicker({
       }
       
       const data = await response.json()
-      const feature = data.features?.[0]
       
-      if (feature) {
-        const props = feature.properties
-        
-        // Extract meaningful name
-        const locationName = props.name || 
-                            props.street || 
-                            props.district ||
-                            props.city ||
-                            'Selected Location'
-        
-        const displayName = [
-          props.name,
-          props.street,
-          props.district || props.suburb,
-          props.city,
-          'Kenya'
-        ].filter(Boolean).join(', ')
-        
-        setSelectedLocation({
-          lat,
-          lng,
-          address: displayName,
-          name: locationName
-        })
-      }
+      const locationName = data.name || 
+                          data.address?.road || 
+                          data.address?.suburb ||
+                          data.address?.neighbourhood ||
+                          'Selected Location'
+      
+      setSelectedLocation({
+        lat,
+        lng,
+        address: data.display_name,
+        name: locationName
+      })
     } catch (error) {
       console.error('Reverse geocoding error:', error)
-      // Keep the coordinates-based location if reverse geocoding fails
     } finally {
       setIsReverseGeocoding(false)
-    }
-  }
-
-  const getCurrentLocation = () => {
-    if ('geolocation' in navigator) {
-      setIsReverseGeocoding(true)
-      setSearchError(null) // Clear any previous errors
-      
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          const lat = position.coords.latitude
-          const lng = position.coords.longitude
-          setCenter([lat, lng])
-          setZoom(16)
-          handleMapClick(lat, lng)
-        },
-        (error) => {
-          console.error('Geolocation error:', error)
-          setIsReverseGeocoding(false)
-          
-          // Only show error for non-permission issues
-          // Permission denied is expected if user hasn't granted access
-          if (error.code !== error.PERMISSION_DENIED) {
-            let errorMessage = 'Unable to get your location.'
-            if (error.code === error.POSITION_UNAVAILABLE) {
-              errorMessage = 'Location information unavailable. Please try searching for your location instead.'
-            } else if (error.code === error.TIMEOUT) {
-              errorMessage = 'Location request timed out. Please try searching for your location instead.'
-            }
-            setSearchError(errorMessage)
-          }
-          // For permission denied, we silently fail since it's expected behavior
-        },
-        {
-          enableHighAccuracy: true,
-          timeout: 10000,
-          maximumAge: 0
-        }
-      )
-    } else {
-      alert('Geolocation is not supported by your browser. Please search for your location instead.')
     }
   }
 
@@ -405,10 +465,8 @@ export default function LocationPicker({
     setSearchError(null)
   }
 
-  // Close search results when clicking outside
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      // Don't close if clicking inside the search container
       const target = e.target as HTMLElement
       if (target.closest('.search-container')) {
         return
@@ -451,7 +509,7 @@ export default function LocationPicker({
           </span>
         </CardTitle>
         <CardDescription>
-          Click on the map to select a location, or use the search below to find specific places
+          Click on the map to select a location, or use the search below
         </CardDescription>
       </CardHeader>
 
@@ -466,7 +524,7 @@ export default function LocationPicker({
             <div className="relative">
               <Input
                 type="text"
-                placeholder="Try: Westlands, Karen, Kilimani, Brookhouse..."
+                placeholder="Try: Westlands, Karen, Kilimani..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onFocus={() => searchResults.length > 0 && setShowResults(true)}
@@ -477,13 +535,11 @@ export default function LocationPicker({
                     : "focus:border-red-400"
                 )}
               />
-              {/* Loading indicator for search */}
               {isSearching && (
                 <div className="absolute right-3 top-1/2 -translate-y-1/2">
                   <Loader2 className="w-5 h-5 text-blue-500 animate-spin" />
                 </div>
               )}
-              {/* Clear search button */}
               {searchQuery && !isSearching && (
                 <button
                   onClick={clearSearch}
@@ -494,14 +550,12 @@ export default function LocationPicker({
               )}
             </div>
             
-            {/* Helper text */}
             {searchQuery.length > 0 && searchQuery.length < 3 && !isSearching && (
               <p className="text-xs text-gray-500 mt-1 ml-1">
                 Type at least 3 characters to search...
               </p>
             )}
             
-            {/* Searching indicator */}
             {isSearching && (
               <p className="text-xs text-blue-600 mt-1 ml-1 flex items-center gap-1">
                 <Loader2 className="w-3 h-3 animate-spin" />
@@ -509,7 +563,6 @@ export default function LocationPicker({
               </p>
             )}
             
-            {/* Search Error Alert */}
             {searchError && (
               <Alert variant="destructive" className="mt-2">
                 <AlertCircle className="h-4 w-4" />
@@ -522,7 +575,7 @@ export default function LocationPicker({
             {/* Search Results Dropdown */}
             {showResults && searchResults.length > 0 && (
               <div 
-                className="absolute z-50 w-full mt-2 bg-white rounded-xl shadow-2xl max-h-80 overflow-y-auto"
+                className="absolute z-50 w-full mt-2 bg-white rounded-xl shadow-2xl max-h-80 overflow-y-auto border-4 border-blue-300"
                 style={{ 
                   position: 'absolute',
                   top: '100%',
@@ -531,13 +584,12 @@ export default function LocationPicker({
                   zIndex: 9999,
                   marginTop: '8px',
                   display: 'block',
-                  border: '4px solid #3b82f6', // Bright blue border to see if it renders
                   backgroundColor: 'white'
                 }}
               >
                 <div className="p-2 bg-blue-100 border-b-2 border-blue-300">
                   <p className="text-sm font-bold text-blue-900">
-                    ✅ {searchResults.length} location{searchResults.length > 1 ? 's' : ''} found - click to zoom
+                    ✅ {searchResults.length} location{searchResults.length > 1 ? 's' : ''} found - click to select
                   </p>
                 </div>
                 {searchResults.map((result, index) => {
@@ -578,6 +630,22 @@ export default function LocationPicker({
           </div>
         </div>
 
+        {/* Geofence Error Alert */}
+        {geofenceError && (
+          <Alert variant="destructive" className="animate-in slide-in-from-top duration-300">
+            <AlertCircle className="h-5 w-5" />
+            <AlertDescription className="ml-2">
+              <div className="font-semibold mb-1">Location Outside Route Area</div>
+              <div className="text-sm">{geofenceError}</div>
+              {validationDistance && (
+                <div className="text-xs mt-1 opacity-90">
+                  Please select a location closer to the route corridor.
+                </div>
+              )}
+            </AlertDescription>
+          </Alert>
+        )}
+
         {/* Map */}
         <div className="h-[400px] rounded-2xl overflow-hidden border-4 border-white shadow-2xl relative">
           {isReverseGeocoding && (
@@ -587,7 +655,6 @@ export default function LocationPicker({
             </div>
           )}
           
-          {/* Map instructions overlay */}
           {!selectedLocation && (
             <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 z-[1000] bg-black/75 text-white px-4 py-2 rounded-full shadow-lg">
               <p className="text-sm font-medium">
@@ -631,7 +698,7 @@ export default function LocationPicker({
         </div>
 
         {/* Selected Location Info */}
-        {selectedLocation && (
+        {selectedLocation && !geofenceError && (
           <div className={cn(
             "p-4 rounded-xl border-2 shadow-lg animate-in slide-in-from-bottom duration-300",
             type === 'pickup'
@@ -656,6 +723,11 @@ export default function LocationPicker({
                   <Badge variant="outline" className="text-xs">
                     📍 {selectedLocation.lat.toFixed(6)}, {selectedLocation.lng.toFixed(6)}
                   </Badge>
+                  {validationDistance !== null && (
+                    <Badge variant="outline" className="text-xs bg-green-50 text-green-700 border-green-300">
+                      ✓ {validationDistance.toFixed(1)}km from route
+                    </Badge>
+                  )}
                 </div>
               </div>
             </div>
@@ -665,13 +737,13 @@ export default function LocationPicker({
         {/* Confirm Button */}
         <Button
           onClick={handleConfirm}
-          disabled={!selectedLocation}
+          disabled={!selectedLocation || geofenceError !== null}
           className={cn(
             "w-full h-14 shadow-xl text-lg font-bold transform hover:scale-105 transition-all",
             type === 'pickup'
               ? "bg-gradient-to-r from-blue-500 to-cyan-600 hover:from-blue-600 hover:to-cyan-700"
               : "bg-gradient-to-r from-red-500 to-pink-600 hover:from-red-600 hover:to-pink-700",
-            !selectedLocation && "opacity-50 cursor-not-allowed"
+            (!selectedLocation || geofenceError) && "opacity-50 cursor-not-allowed"
           )}
         >
           <CheckCircle2 className="w-5 h-5 mr-2" />
