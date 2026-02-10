@@ -31,6 +31,13 @@ function getCurrentUserId(): number | null {
   return userId ? parseInt(userId, 10) : null
 }
 
+type Trip = {
+  trip_id: number
+  trip_date: string
+  service_time: 'morning' | 'evening'
+  status: 'scheduled' | 'picked_up' | 'completed' | 'cancelled'
+}
+
 export type Booking = {
   booking_id: number
   pickup_location?: string
@@ -44,6 +51,7 @@ export type Booking = {
   service_type: string
   days_of_week?: string
   status: 'active' | 'cancelled' | 'completed'
+  trips?: Trip[]
 }
 
 interface Props {
@@ -57,6 +65,67 @@ export default function BookingHistory({ onTrack }: Props) {
   const [loading, setLoading] = useState(true)
   const [cancellingId, setCancellingId] = useState<number | null>(null)
 
+  // ✅ Check if today's trips are completed
+  const checkTodayTripsCompleted = (booking: Booking): boolean => {
+    if (!booking.trips || booking.trips.length === 0) return false
+    
+    const today = new Date().toISOString().split('T')[0]
+    
+    // Get today's trips for this booking
+    const todayTrips = booking.trips.filter(trip => 
+      trip.trip_date === today && trip.status !== 'cancelled'
+    )
+    
+    if (todayTrips.length === 0) return false
+    
+    // For 'both' service type, check if BOTH morning and evening are completed
+    if (booking.service_type === 'both') {
+      const morningTrip = todayTrips.find(t => t.service_time === 'morning')
+      const eveningTrip = todayTrips.find(t => t.service_time === 'evening')
+      
+      return (
+        morningTrip?.status === 'completed' && 
+        eveningTrip?.status === 'completed'
+      )
+    }
+    
+    // For single service type, check if that trip is completed
+    return todayTrips.every(trip => trip.status === 'completed')
+  }
+
+  // ✅ NEW: Check if booking is truly active (has upcoming/today's incomplete trips)
+  const isBookingActive = (booking: Booking): boolean => {
+    // Booking must have status 'active'
+    if (booking.status !== 'active') return false
+    
+    const today = new Date().toISOString().split('T')[0]
+    const endDate = booking.end_date.split('T')[0]
+    
+    // If booking has ended, it's not active
+    if (endDate < today) return false
+    
+    // If no trips data, consider it active if within date range
+    if (!booking.trips || booking.trips.length === 0) {
+      return true
+    }
+    
+    // Check if today's trips are completed
+    const todayCompleted = checkTodayTripsCompleted(booking)
+    
+    // If today's trips are completed, check if there are future trips
+    if (todayCompleted) {
+      const futureTrips = booking.trips.filter(trip => 
+        trip.trip_date > today && trip.status !== 'cancelled'
+      )
+      
+      // Active only if there are future trips
+      return futureTrips.length > 0
+    }
+    
+    // If today's trips are not completed, it's active
+    return true
+  }
+
   // ---------------- FETCH BOOKINGS ----------------
   useEffect(() => {
     fetchBookings()
@@ -66,7 +135,6 @@ export default function BookingHistory({ onTrack }: Props) {
     try {
       const userId = getCurrentUserId()
       
-      // If no user ID found, don't fetch
       if (!userId) {
         console.error('No user ID found')
         setLoading(false)
@@ -84,7 +152,32 @@ export default function BookingHistory({ onTrack }: Props) {
       if (!res.ok) throw new Error('Failed to fetch booking history')
 
       const data: Booking[] = await res.json()
-      setBookings(data)
+      
+      // Fetch trip details for each booking
+      const bookingsWithTrips = await Promise.all(
+        data.map(async (booking) => {
+          try {
+            const tripRes = await fetch(`${BASE_URL}/bookings/${booking.booking_id}`, {
+              credentials: 'include',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${localStorage.getItem('access_token') || ''}`,
+              },
+            })
+            
+            if (tripRes.ok) {
+              const tripData = await tripRes.json()
+              return { ...booking, trips: tripData.trips || [] }
+            }
+          } catch (err) {
+            console.error(`Failed to fetch trips for booking ${booking.booking_id}:`, err)
+          }
+          
+          return booking
+        })
+      )
+      
+      setBookings(bookingsWithTrips)
     } catch (err) {
       console.error('Booking history error:', err)
     } finally {
@@ -147,7 +240,7 @@ export default function BookingHistory({ onTrack }: Props) {
     }
   }
 
-  // ---------------- FILTER ----------------
+  // ✅ UPDATED FILTER - Uses isBookingActive for 'active' tab
   const filteredBookings = bookings.filter(b => {
     const pickup = getPickup(b).toLowerCase()
     const dropoff = getDropoff(b).toLowerCase()
@@ -157,9 +250,14 @@ export default function BookingHistory({ onTrack }: Props) {
       dropoff.includes(searchTerm.toLowerCase()) ||
       b.booking_id.toString().includes(searchTerm)
 
-    if (activeTab === 'active') return b.status === 'active' && matchesSearch
-    if (activeTab === 'cancelled') return b.status === 'cancelled' && matchesSearch
-    return matchesSearch
+    if (activeTab === 'active') {
+      // ✅ Use the new isBookingActive function
+      return isBookingActive(b) && matchesSearch
+    }
+    if (activeTab === 'cancelled') {
+      return b.status === 'cancelled' && matchesSearch
+    }
+    return matchesSearch // 'all' tab
   })
 
   // ---------------- STATUS STYLES ----------------
@@ -223,9 +321,10 @@ export default function BookingHistory({ onTrack }: Props) {
     )
   }
 
+  // ✅ UPDATED STATUS COUNTS - Uses isBookingActive
   const statusCounts = {
     all: bookings.length,
-    active: bookings.filter(b => b.status === 'active').length,
+    active: bookings.filter(b => isBookingActive(b)).length,
     cancelled: bookings.filter(b => b.status === 'cancelled').length,
   }
 
@@ -285,13 +384,19 @@ export default function BookingHistory({ onTrack }: Props) {
                   </div>
                   <p className="text-lg font-medium text-foreground">No bookings found</p>
                   <p className="text-sm text-muted-foreground mt-1">
-                    {searchTerm ? 'Try adjusting your search' : 'Create your first booking to get started'}
+                    {searchTerm ? 'Try adjusting your search' : 
+                     activeTab === 'active' ? 'No active bookings at the moment' :
+                     activeTab === 'cancelled' ? 'No cancelled bookings' :
+                     'Create your first booking to get started'}
                   </p>
                 </div>
               ) : (
                 filteredBookings.map((booking) => {
                   const statusConfig = getStatusConfig(booking.status)
                   const StatusIcon = statusConfig.icon
+                  
+                  // Check if today's trips are completed
+                  const todayCompleted = checkTodayTripsCompleted(booking)
                   
                   return (
                     <Card
@@ -314,10 +419,19 @@ export default function BookingHistory({ onTrack }: Props) {
                                   <h3 className="text-lg font-bold text-foreground">
                                     Booking #{booking.booking_id}
                                   </h3>
-                                  <Badge variant="outline" className={statusConfig.badge}>
-                                    <StatusIcon className={cn('w-3 h-3 mr-1', statusConfig.iconColor)} />
-                                    {booking.status}
-                                  </Badge>
+                                  
+                                  {/* ✅ Show "Today Completed" badge if today is completed, otherwise show status badge */}
+                                  {booking.status === 'active' && todayCompleted ? (
+                                    <Badge className="bg-green-500 text-white border-green-600">
+                                      <CheckCircle2 className="w-3 h-3 mr-1" />
+                                      Today Completed
+                                    </Badge>
+                                  ) : (
+                                    <Badge variant="outline" className={statusConfig.badge}>
+                                      <StatusIcon className={cn('w-3 h-3 mr-1', statusConfig.iconColor)} />
+                                      {booking.status}
+                                    </Badge>
+                                  )}
                                 </div>
                                 <p className="text-sm text-muted-foreground">
                                   {getServiceTypeLabel(booking.service_type)}
@@ -404,18 +518,35 @@ export default function BookingHistory({ onTrack }: Props) {
                             </div>
                           </div>
 
-                          {/* RIGHT SECTION - ACTIONS */}
+                          {/* ✅ UPDATED RIGHT SECTION - ACTIONS */}
                           {booking.status === 'active' && (
                             <div className="flex lg:flex-col gap-2 lg:min-w-[140px]">
+                              {/* ✅ Track Bus / Completed button */}
                               <Button
-                                variant="outline"
-                                className="flex-1 lg:flex-none gap-2 hover:bg-primary hover:text-white transition-colors"
-                                onClick={() => onTrack(booking.booking_id)}
+                                variant={todayCompleted ? "outline" : "outline"}
+                                className={cn(
+                                  "flex-1 lg:flex-none gap-2 transition-colors",
+                                  todayCompleted 
+                                    ? "bg-green-100 text-green-700 border-green-300 cursor-not-allowed hover:bg-green-100 hover:text-green-700" 
+                                    : "hover:bg-primary hover:text-white"
+                                )}
+                                onClick={() => !todayCompleted && onTrack(booking.booking_id)}
+                                disabled={todayCompleted}
                               >
-                                <Navigation className="w-4 h-4" />
-                                Track Bus
+                                {todayCompleted ? (
+                                  <>
+                                    <CheckCircle2 className="w-4 h-4" />
+                                    Completed
+                                  </>
+                                ) : (
+                                  <>
+                                    <Navigation className="w-4 h-4" />
+                                    Track Bus
+                                  </>
+                                )}
                               </Button>
 
+                              {/* Cancel button */}
                               <Button
                                 variant="destructive"
                                 className="flex-1 lg:flex-none gap-2"
@@ -436,6 +567,8 @@ export default function BookingHistory({ onTrack }: Props) {
                               </Button>
                             </div>
                           )}
+                          
+                          {/* ✅ REMOVED: No action buttons for cancelled/completed bookings */}
                         </div>
                       </CardContent>
                     </Card>
