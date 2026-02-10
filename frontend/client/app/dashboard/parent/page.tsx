@@ -28,6 +28,45 @@ function getCurrentUserId(): number | null {
   return userId ? parseInt(userId, 10) : null
 }
 
+// ✅ NEW: Helper to check if booking should count as "Active Now"
+const isBookingActiveNow = (booking: Booking): boolean => {
+  // Must have active status
+  if (booking.status !== 'active') return false
+  
+  // If no trips data, count as active (backwards compatible)
+  if (!booking.trips || booking.trips.length === 0) return true
+  
+  const today = new Date().toISOString().split('T')[0]
+  
+  // Get today's trips for this booking
+  const todayTrips = booking.trips.filter((trip: any) => 
+    trip.trip_date === today && trip.status !== 'cancelled'
+  )
+  
+  // If no trips today, count as active (future booking)
+  if (todayTrips.length === 0) return true
+  
+  // For 'both' service type, check if BOTH morning and evening are completed
+  if (booking.service_type === 'both') {
+    const morningTrip = todayTrips.find((t: any) => t.service_time === 'morning')
+    const eveningTrip = todayTrips.find((t: any) => t.service_time === 'evening')
+    
+    // If BOTH are completed, this booking is NOT active now
+    const bothCompleted = (
+      morningTrip?.status === 'completed' && 
+      eveningTrip?.status === 'completed'
+    )
+    
+    return !bothCompleted
+  }
+  
+  // For single service type (morning or evening)
+  // If ALL today's trips are completed, NOT active now
+  const allCompleted = todayTrips.every((trip: any) => trip.status === 'completed')
+  
+  return !allCompleted
+}
+
 export default function ParentDashboardPage() {
   // ---------------- STATE ----------------
   const [summary, setSummary] = useState({
@@ -81,10 +120,35 @@ export default function ParentDashboardPage() {
 
       const data: Booking[] = await res.json()
 
+      // ✅ UPDATED: Fetch trip details for each booking to check completion status
+      const bookingsWithTrips = await Promise.all(
+        data.map(async (booking) => {
+          try {
+            const tripRes = await fetch(`${BASE_URL}/bookings/${booking.booking_id}`, {
+              credentials: 'include',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${localStorage.getItem('token') || ''}`,
+              },
+            })
+            
+            if (tripRes.ok) {
+              const tripData = await tripRes.json()
+              return { ...booking, trips: tripData.trips || [] }
+            }
+          } catch (err) {
+            console.error(`Failed to fetch trips for booking ${booking.booking_id}:`, err)
+          }
+          
+          return booking
+        })
+      )
+
+      // ✅ UPDATED: Calculate summary with corrected active count
       setSummary({
-        total_bookings: data.length,
-        active_bookings: data.filter(b => b.status === 'active').length,
-        upcoming_trips: data.filter(b => {
+        total_bookings: bookingsWithTrips.length,
+        active_bookings: bookingsWithTrips.filter(b => isBookingActiveNow(b)).length,  // ← FIXED
+        upcoming_trips: bookingsWithTrips.filter(b => {
           const startDate = new Date(b.start_date)
           const today = new Date()
           return b.status === 'active' && startDate >= today
