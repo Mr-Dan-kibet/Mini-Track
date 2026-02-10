@@ -15,6 +15,7 @@ type Id = number | string
 type BookingApi = {
   id?: Id
   user_id: Id
+  user_name?: string  // ✅ Added - backend sends this
   route_id: Id
 
   pickup_location_id?: Id
@@ -41,6 +42,7 @@ type Booking = {
   rowKey: string
 
   user_id: string
+  user_name: string  // ✅ Added - display name
   route_id: string
 
   pickup_location_id?: string
@@ -131,10 +133,6 @@ const routeLabel = (r?: RouteOption) => {
   return `Route #${toId(r.id)}`
 }
 
-const userLabel = (userId?: string) => {
-  return userId ? `User #${userId}` : '—'
-}
-
 const normalizeBooking = (raw: BookingApi, index: number): Booking => {
   const user_id = toId(raw.user_id)
   const route_id = toId(raw.route_id)
@@ -153,10 +151,16 @@ const normalizeBooking = (raw: BookingApi, index: number): Booking => {
     ? `booking-${toId(raw.id)}`
     : `booking-${composite}-${index}`
 
+  // ✅ Get user name from backend or fallback
+  const user_name = raw.user_name && String(raw.user_name).trim() 
+    ? String(raw.user_name).trim()
+    : `User #${user_id}`
+
   return {
     id,
     rowKey,
     user_id,
+    user_name,  // ✅ Store the actual name
     route_id,
 
     pickup_location_id: raw.pickup_location_id != null ? toId(raw.pickup_location_id) : undefined,
@@ -299,14 +303,14 @@ export default function BookingsManagement() {
       const r = routeById.get(b.route_id)
 
       const routeName = routeLabel(r).toLowerCase()
-      const name = userLabel(b.user_id).toLowerCase()
+      const userName = b.user_name.toLowerCase()  // ✅ Search by actual name
 
       const pickup = pickupName(b).toLowerCase()
       const dropoff = dropoffName(b).toLowerCase()
 
       const matchesSearch =
         q.length === 0 ||
-        name.includes(q) ||
+        userName.includes(q) ||  // ✅ Search by name
         routeName.includes(q) ||
         pickup.includes(q) ||
         dropoff.includes(q) ||
@@ -347,7 +351,7 @@ export default function BookingsManagement() {
       const rows = filteredBookings.map(b => {
         const r = routeById.get(b.route_id)
         return {
-          user: userLabel(b.user_id),
+          user: b.user_name,  // ✅ Export actual name
           route: routeLabel(r),
           pickup_location: pickupName(b),
           dropoff_location: dropoffName(b),
@@ -519,14 +523,15 @@ export default function BookingsManagement() {
 
                         return (
                           <tr
-                            key={b.rowKey} // ✅ FIX: guaranteed unique
+                            key={b.rowKey}
                             className="border-b border-border/50 hover:bg-muted/30 transition-colors"
                           >
                             <td className="py-4 px-6">
                               <div>
-                                <p className="font-medium text-foreground">{userLabel(b.user_id)}</p>
-                                <p className="text-xs text-muted-foreground">User #{b.user_id}</p>
-                              </div>
+                                
+                                <p className="font-medium text-foreground">{b.user_name}</p>
+{/*                                 <p className="text-xs text-muted-foreground">ID: {b.user_id}</p>
+ */}                              </div>
                             </td>
 
                             <td className="py-4 px-6">
