@@ -41,7 +41,9 @@ class User(db.Model):
         back_populates='user',
         cascade='all, delete-orphan'
     )
-
+# ADD THESE COLUMNS TO YOUR Route MODEL IN models.py
+# 
+# Find the Route class and add these three new columns:
 
 class Route(db.Model):
     __tablename__ = 'routes'
@@ -50,8 +52,13 @@ class Route(db.Model):
     name = db.Column(db.String(100), nullable=False)
     starting_point = db.Column(db.String(200), nullable=False)
     ending_point = db.Column(db.String(200), nullable=False)
+    
+    # ✅ ADD THESE THREE NEW COLUMNS
+    starting_point_gps = db.Column(db.String(50))  # e.g., "-1.2921,36.8219"
+    ending_point_gps = db.Column(db.String(50))    # e.g., "-1.2500,36.7500"
+    route_radius_km = db.Column(db.Float, default=5.0)  # Default 5km radius corridor
 
-    # Relationships
+    # Relationships (keep existing ones)
     vehicles = db.relationship(
         'Vehicle',
         back_populates='route',
