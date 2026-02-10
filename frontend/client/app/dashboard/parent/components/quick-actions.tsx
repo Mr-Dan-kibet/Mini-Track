@@ -6,7 +6,7 @@ import { Calendar, Bus, Clock, TrendingUp } from 'lucide-react'
 interface QuickActionsProps {
   summary: {
     totalBookings: number
-    activeRoutes: number
+    activeRoutes: number  // ✅ Now correctly excludes today's completed trips
     upcomingTrips: number
   }
 }
@@ -33,7 +33,8 @@ export default function QuickActions({ summary }: QuickActionsProps) {
         </CardContent>
       </Card>
 
-      {/* Card 2 - Active Bookings (White with green accent) */}
+      {/* Card 2 - Active Now (White with green accent) */}
+      {/* ✅ FIXED: Correctly shows only active trips (excludes today's completed) */}
       <Card className="border-0 shadow-lg bg-white dark:bg-card">
         <CardContent className="p-6">
           <div className="flex items-start justify-between mb-3">
@@ -50,12 +51,14 @@ export default function QuickActions({ summary }: QuickActionsProps) {
                 style={{ width: summary.activeRoutes > 0 ? '75%' : '0%' }}
               />
             </div>
-            <p className="text-xs text-muted-foreground">Currently running</p>
+            <p className="text-xs text-muted-foreground">
+              {summary.activeRoutes === 0 ? 'No active trips' : 'Currently running'}
+            </p>
           </div>
         </CardContent>
       </Card>
 
-      {/* Card 3 - Total Trips (Orange-red gradient) */}
+      {/* Card 3 - Scheduled Trips (Orange-red gradient) */}
       <Card className="border-0 shadow-xl bg-gradient-to-br from-amber-400 via-orange-500 to-red-500 text-white overflow-hidden relative">
         <CardContent className="p-6 relative z-10">
           <div className="flex items-center justify-between mb-3">
