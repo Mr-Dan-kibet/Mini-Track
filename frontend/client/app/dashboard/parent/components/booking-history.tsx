@@ -31,6 +31,14 @@ function getCurrentUserId(): number | null {
   return userId ? parseInt(userId, 10) : null
 }
 
+// ✅ ADDED: Trip type for tracking completion
+type Trip = {
+  trip_id: number
+  trip_date: string
+  service_time: 'morning' | 'evening'
+  status: 'scheduled' | 'picked_up' | 'completed' | 'cancelled'
+}
+
 export type Booking = {
   booking_id: number
   pickup_location?: string
@@ -44,6 +52,7 @@ export type Booking = {
   service_type: string
   days_of_week?: string
   status: 'active' | 'cancelled' | 'completed'
+  trips?: Trip[]  // ✅ ADDED: Optional trips array
 }
 
 interface Props {
@@ -56,6 +65,34 @@ export default function BookingHistory({ onTrack }: Props) {
   const [activeTab, setActiveTab] = useState<'all' | 'active' | 'cancelled'>('all')
   const [loading, setLoading] = useState(true)
   const [cancellingId, setCancellingId] = useState<number | null>(null)
+
+  // ✅ ADDED: Check if today's trips are completed
+  const checkTodayTripsCompleted = (booking: Booking): boolean => {
+    if (!booking.trips || booking.trips.length === 0) return false
+    
+    const today = new Date().toISOString().split('T')[0]
+    
+    // Get today's trips for this booking
+    const todayTrips = booking.trips.filter(trip => 
+      trip.trip_date === today && trip.status !== 'cancelled'
+    )
+    
+    if (todayTrips.length === 0) return false
+    
+    // For 'both' service type, check if BOTH morning and evening are completed
+    if (booking.service_type === 'both') {
+      const morningTrip = todayTrips.find(t => t.service_time === 'morning')
+      const eveningTrip = todayTrips.find(t => t.service_time === 'evening')
+      
+      return (
+        morningTrip?.status === 'completed' && 
+        eveningTrip?.status === 'completed'
+      )
+    }
+    
+    // For single service type, check if that trip is completed
+    return todayTrips.every(trip => trip.status === 'completed')
+  }
 
   // ---------------- FETCH BOOKINGS ----------------
   useEffect(() => {
@@ -84,7 +121,32 @@ export default function BookingHistory({ onTrack }: Props) {
       if (!res.ok) throw new Error('Failed to fetch booking history')
 
       const data: Booking[] = await res.json()
-      setBookings(data)
+      
+      // ✅ ADDED: Fetch trip details for each booking
+      const bookingsWithTrips = await Promise.all(
+        data.map(async (booking) => {
+          try {
+            const tripRes = await fetch(`${BASE_URL}/bookings/${booking.booking_id}`, {
+              credentials: 'include',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${localStorage.getItem('access_token') || ''}`,
+              },
+            })
+            
+            if (tripRes.ok) {
+              const tripData = await tripRes.json()
+              return { ...booking, trips: tripData.trips || [] }
+            }
+          } catch (err) {
+            console.error(`Failed to fetch trips for booking ${booking.booking_id}:`, err)
+          }
+          
+          return booking
+        })
+      )
+      
+      setBookings(bookingsWithTrips)
     } catch (err) {
       console.error('Booking history error:', err)
     } finally {
@@ -293,6 +355,9 @@ export default function BookingHistory({ onTrack }: Props) {
                   const statusConfig = getStatusConfig(booking.status)
                   const StatusIcon = statusConfig.icon
                   
+                  // ✅ ADDED: Check if today's trips are completed
+                  const todayCompleted = checkTodayTripsCompleted(booking)
+                  
                   return (
                     <Card
                       key={booking.booking_id}
@@ -318,6 +383,14 @@ export default function BookingHistory({ onTrack }: Props) {
                                     <StatusIcon className={cn('w-3 h-3 mr-1', statusConfig.iconColor)} />
                                     {booking.status}
                                   </Badge>
+                                  
+                                  {/* ✅ ADDED: Today's completion badge */}
+                                  {booking.status === 'active' && todayCompleted && (
+                                    <Badge className="bg-green-500 text-white border-green-600">
+                                      <CheckCircle2 className="w-3 h-3 mr-1" />
+                                      Today Completed
+                                    </Badge>
+                                  )}
                                 </div>
                                 <p className="text-sm text-muted-foreground">
                                   {getServiceTypeLabel(booking.service_type)}
@@ -407,13 +480,29 @@ export default function BookingHistory({ onTrack }: Props) {
                           {/* RIGHT SECTION - ACTIONS */}
                           {booking.status === 'active' && (
                             <div className="flex lg:flex-col gap-2 lg:min-w-[140px]">
+                              {/* ✅ UPDATED: Track Bus button - disabled if today completed */}
                               <Button
                                 variant="outline"
-                                className="flex-1 lg:flex-none gap-2 hover:bg-primary hover:text-white transition-colors"
-                                onClick={() => onTrack(booking.booking_id)}
+                                className={cn(
+                                  "flex-1 lg:flex-none gap-2 transition-colors",
+                                  todayCompleted 
+                                    ? "bg-green-100 text-green-700 border-green-300 cursor-not-allowed" 
+                                    : "hover:bg-primary hover:text-white"
+                                )}
+                                onClick={() => !todayCompleted && onTrack(booking.booking_id)}
+                                disabled={todayCompleted}
                               >
-                                <Navigation className="w-4 h-4" />
-                                Track Bus
+                                {todayCompleted ? (
+                                  <>
+                                    <CheckCircle2 className="w-4 h-4" />
+                                    Completed
+                                  </>
+                                ) : (
+                                  <>
+                                    <Navigation className="w-4 h-4" />
+                                    Track Bus
+                                  </>
+                                )}
                               </Button>
 
                               <Button
