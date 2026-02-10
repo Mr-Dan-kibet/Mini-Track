@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Clock, ArrowRight, Calendar } from 'lucide-react'
+import { Clock, ArrowRight, Calendar, CheckCircle2 } from 'lucide-react'
 
 const BASE_URL = 'http://127.0.0.1:5555'
 
@@ -18,6 +18,14 @@ function getCurrentUserId(): number | null {
 
 type BookingStatus = 'active' | 'cancelled' | 'completed'
 
+// ✅ ADDED: Trip type
+type Trip = {
+  trip_id: number
+  trip_date: string
+  service_time: 'morning' | 'evening'
+  status: 'scheduled' | 'picked_up' | 'completed' | 'cancelled'
+}
+
 interface Booking {
   booking_id: number
   route_name: string
@@ -29,6 +37,7 @@ interface Booking {
   start_date: string
   end_date: string
   booking_date: string
+  trips?: Trip[]  // ✅ ADDED
 }
 
 // Helper function to check if a date is today
@@ -69,6 +78,34 @@ const getDateLabel = (dateString: string): string => {
   }
   
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}
+
+// ✅ ADDED: Check if today's trips are completed
+const checkTodayTripsCompleted = (booking: Booking): boolean => {
+  if (!booking.trips || booking.trips.length === 0) return false
+  
+  const today = new Date().toISOString().split('T')[0]
+  
+  // Get today's trips for this booking
+  const todayTrips = booking.trips.filter(trip => 
+    trip.trip_date === today && trip.status !== 'cancelled'
+  )
+  
+  if (todayTrips.length === 0) return false
+  
+  // For 'both' service type, check if BOTH morning and evening are completed
+  if (booking.service_type === 'both') {
+    const morningTrip = todayTrips.find(t => t.service_time === 'morning')
+    const eveningTrip = todayTrips.find(t => t.service_time === 'evening')
+    
+    return (
+      morningTrip?.status === 'completed' && 
+      eveningTrip?.status === 'completed'
+    )
+  }
+  
+  // For single service type, check if that trip is completed
+  return todayTrips.every(trip => trip.status === 'completed')
 }
 
 // ---------------- COMPONENT ----------------
@@ -125,10 +162,34 @@ export default function RecentBookings() {
         
         // Take first 5 upcoming bookings
         const recent = sortedBookings.slice(0, 5)
-
-        setBookings(recent)
         
-        console.log('Upcoming bookings sorted by start_date:', recent)
+        // ✅ ADDED: Fetch trip details for each booking
+        const bookingsWithTrips = await Promise.all(
+          recent.map(async (booking) => {
+            try {
+              const tripRes = await fetch(`${BASE_URL}/bookings/${booking.booking_id}`, {
+                credentials: 'include',
+                headers: {
+                  'Content-Type': 'application/json',
+                  Authorization: `Bearer ${localStorage.getItem('access_token') || ''}`,
+                },
+              })
+              
+              if (tripRes.ok) {
+                const tripData = await tripRes.json()
+                return { ...booking, trips: tripData.trips || [] }
+              }
+            } catch (err) {
+              console.error(`Failed to fetch trips for booking ${booking.booking_id}:`, err)
+            }
+            
+            return booking
+          })
+        )
+
+        setBookings(bookingsWithTrips)
+        
+        console.log('Upcoming bookings sorted by start_date:', bookingsWithTrips)
       } catch (err) {
         console.error('Recent bookings error:', err)
         setBookings([])
@@ -140,7 +201,12 @@ export default function RecentBookings() {
     fetchRecentBookings()
   }, [])
 
-  const getStatusColor = (status: BookingStatus) => {
+  const getStatusColor = (status: BookingStatus, todayCompleted: boolean) => {
+    // ✅ UPDATED: Show completed color if today's trips are done
+    if (status === 'active' && todayCompleted) {
+      return 'bg-green-500/20 text-green-700 border-green-500/50'
+    }
+    
     switch (status) {
       case 'active':
         return 'bg-emerald-500/20 text-emerald-700 border-emerald-500/50'
@@ -219,75 +285,101 @@ export default function RecentBookings() {
 
         {!loading && bookings.length > 0 && (
           <div className="space-y-3">
-            {bookings.map((b, i) => (
-              <div
-                key={b.booking_id}
-                className={`relative flex flex-col md:flex-row items-start md:items-center justify-between p-5 border border-border/50 rounded-2xl shadow-md hover:shadow-xl transition-all duration-300 ${getCardColor(i)}`}
-              >
-                {/* Priority Badge (Today/Tomorrow) */}
-                {getPriorityBadge(b.start_date) && (
-                  <div className="absolute -top-2 -right-2">
-                    {getPriorityBadge(b.start_date)}
-                  </div>
-                )}
-
-                {/* Left: Booking info */}
-                <div className="flex-1 space-y-2">
-                  {/* Route Name */}
-                  <p className="font-semibold text-base text-gray-800 dark:text-gray-900">
-                    {b.route_name}
-                  </p>
-
-                  {/* Date Range with relative label */}
-                  <div className="flex items-center gap-2 flex-wrap">
-                    {/* Start Date Badge */}
-                    <div className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary text-white rounded-lg text-xs font-semibold shadow-sm">
-                      <Clock className="w-3.5 h-3.5" />
-                      {getDateLabel(b.start_date)}
+            {bookings.map((b, i) => {
+              // ✅ ADDED: Check if today's trips are completed
+              const todayCompleted = checkTodayTripsCompleted(b)
+              
+              return (
+                <div
+                  key={b.booking_id}
+                  className={`relative flex flex-col md:flex-row items-start md:items-center justify-between p-5 border border-border/50 rounded-2xl shadow-md hover:shadow-xl transition-all duration-300 ${getCardColor(i)}`}
+                >
+                  {/* Priority Badge (Today/Tomorrow) */}
+                  {getPriorityBadge(b.start_date) && (
+                    <div className="absolute -top-2 -right-2">
+                      {getPriorityBadge(b.start_date)}
                     </div>
-                    
-                    {/* Date Range */}
-                    <p className="text-xs text-muted-foreground font-medium">
-                      {new Date(b.start_date).toLocaleDateString('en-US', { 
-                        month: 'short', 
-                        day: 'numeric',
-                        year: 'numeric'
-                      })}
-                      {' → '}
-                      {new Date(b.end_date).toLocaleDateString('en-US', { 
-                        month: 'short', 
-                        day: 'numeric',
-                        year: 'numeric'
-                      })}
+                  )}
+                  
+                  {/* ✅ ADDED: Completion badge for today's completed trips */}
+                  {todayCompleted && isToday(b.start_date) && (
+                    <div className="absolute -top-2 -left-2">
+                      <Badge className="bg-green-500 text-white border-green-600 font-semibold">
+                        <CheckCircle2 className="w-3 h-3 mr-1" />
+                        Completed
+                      </Badge>
+                    </div>
+                  )}
+
+                  {/* Left: Booking info */}
+                  <div className="flex-1 space-y-2">
+                    {/* Route Name */}
+                    <p className="font-semibold text-base text-gray-800 dark:text-gray-900">
+                      {b.route_name}
                     </p>
+
+                    {/* Date Range with relative label */}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {/* Start Date Badge */}
+                      <div className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary text-white rounded-lg text-xs font-semibold shadow-sm">
+                        <Clock className="w-3.5 h-3.5" />
+                        {getDateLabel(b.start_date)}
+                      </div>
+                      
+                      {/* Date Range */}
+                      <p className="text-xs text-muted-foreground font-medium">
+                        {new Date(b.start_date).toLocaleDateString('en-US', { 
+                          month: 'short', 
+                          day: 'numeric',
+                          year: 'numeric'
+                        })}
+                        {' → '}
+                        {new Date(b.end_date).toLocaleDateString('en-US', { 
+                          month: 'short', 
+                          day: 'numeric',
+                          year: 'numeric'
+                        })}
+                      </p>
+                    </div>
+
+                    {/* Pickup and Dropoff */}
+                    <p className="text-xs text-muted-foreground">
+                      <span className="font-semibold">From:</span> {b.pickup_location}
+                      {' → '}
+                      <span className="font-semibold">To:</span> {b.dropoff_location}
+                    </p>
+
+                    {/* Service Type */}
+                    <div className="flex items-center gap-2">
+                      <Badge variant="secondary" className="text-xs capitalize">
+                        {b.service_type}
+                      </Badge>
+                    </div>
                   </div>
 
-                  {/* Pickup and Dropoff */}
-                  <p className="text-xs text-muted-foreground">
-                    <span className="font-semibold">From:</span> {b.pickup_location}
-                    {' → '}
-                    <span className="font-semibold">To:</span> {b.dropoff_location}
-                  </p>
-
-                  {/* Service Type */}
-                  <div className="flex items-center gap-2">
-                    <Badge variant="secondary" className="text-xs capitalize">
-                      {b.service_type}
+                  {/* Right: Seats & status */}
+                  <div className="flex flex-col items-end gap-2 mt-3 md:mt-0">
+                    <p className="font-bold text-lg text-gray-800 dark:text-gray-900">
+                      {b.seats_booked} {b.seats_booked === 1 ? 'seat' : 'seats'}
+                    </p>
+                    {/* ✅ UPDATED: Status badge changes based on completion */}
+                    <Badge 
+                      variant="outline" 
+                      className={getStatusColor(b.status, todayCompleted)}
+                    >
+                      {todayCompleted ? (
+                        <>
+                          <CheckCircle2 className="w-3 h-3 mr-1" />
+                          completed today
+                        </>
+                      ) : (
+                        b.status
+                      )}
                     </Badge>
                   </div>
                 </div>
-
-                {/* Right: Seats & status */}
-                <div className="flex flex-col items-end gap-2 mt-3 md:mt-0">
-                  <p className="font-bold text-lg text-gray-800 dark:text-gray-900">
-                    {b.seats_booked} {b.seats_booked === 1 ? 'seat' : 'seats'}
-                  </p>
-                  <Badge variant="outline" className={getStatusColor(b.status)}>
-                    {b.status}
-                  </Badge>
-                </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         )}
 
