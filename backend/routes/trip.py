@@ -7,6 +7,8 @@ from flask import request
 from flask_restful import Resource
 from datetime import datetime, date
 from models import db, Trip, Booking
+from flask_jwt_extended import jwt_required, get_jwt_identity
+from functools import wraps
 
 # ========================
 # HELPER FUNCTIONS
@@ -32,6 +34,18 @@ from models import db, Trip, Booking
 #         "dropoff_location": trip.booking.dropoff_location,
 #         "seats_booked": trip.booking.seats_booked,
 #     }
+
+def driver_required(fn):
+    @wraps(fn)
+    @jwt_required()
+    def wrapper(*args, **kwargs):
+        identity = get_jwt_identity()
+
+        if identity.get("role_id") != 2:
+            return {"error": "Drivers only"}, 403
+
+        return fn(*args, **kwargs)
+    return wrapper
 
 def serialize_trip(trip):
     """
@@ -73,7 +87,7 @@ class TripToday(Resource):
     Get today's trips for a specific vehicle and service time
     Critical for driver daily checklist
     """
-    
+    @jwt_required()
     def get(self):
         """
         Get today's trips
@@ -132,7 +146,7 @@ class TripPickup(Resource):
     """
     Mark trip as picked up (shortcut endpoint for drivers)
     """
-    
+    @driver_required
     def patch(self, trip_id):
         """
         Mark child as picked up
@@ -174,7 +188,7 @@ class TripDropoff(Resource):
     """
     Mark trip as completed/dropped off (shortcut endpoint for drivers)
     """
-    
+    @driver_required
     def patch(self, trip_id):
         """
         Mark child as dropped off

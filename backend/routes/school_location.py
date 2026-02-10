@@ -1,8 +1,23 @@
 from flask_restful import Resource, request
 from models import SchoolLocation, db
+from flask_jwt_extended import jwt_required, get_jwt_identity
+from functools import wraps
+
+def admin_required(fn):
+    @wraps(fn)
+    @jwt_required()
+    def wrapper(*args, **kwargs):
+        identity = get_jwt_identity()
+
+        if identity.get("role_id") != 1:
+            return {"error": "Admins only"}, 403
+
+        return fn(*args, **kwargs)
+    return wrapper
 
 # create a new school location
 class CreateSchoolLocation(Resource):
+    @admin_required
     def post(self):
         data = request.get_json()
         name = data.get("name")
@@ -32,6 +47,7 @@ class CreateSchoolLocation(Resource):
         }, 201
 # get all school locations     
 class GetAllSchoolLocations(Resource):
+    @jwt_required()
     def get(self):
         locations = SchoolLocation.query.all()
 
@@ -47,6 +63,7 @@ class GetAllSchoolLocations(Resource):
         return results, 200
 # get one school location by id
 class GetSchoolLocation(Resource):
+    @jwt_required()
     def get(self, location_id):
         location = SchoolLocation.query.get(location_id)
 
@@ -62,6 +79,7 @@ class GetSchoolLocation(Resource):
 
 # update a school location by id
 class UpdateSchoolLocation(Resource):
+    @admin_required
     def put(self, location_id):
         location = SchoolLocation.query.get(location_id)
 
@@ -86,6 +104,7 @@ class UpdateSchoolLocation(Resource):
         }, 200
 # delete a school location by id
 class DeleteSchoolLocation(Resource):
+    @admin_required
     def delete(self, location_id):
         location = SchoolLocation.query.get(location_id)
 

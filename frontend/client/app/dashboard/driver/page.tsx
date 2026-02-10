@@ -27,7 +27,7 @@ import {
 
 import ScheduleView from './components/ScheduleView'
 import RouteMap from './components/RouteMap'
-import TripManagement from './components/TripManagement'
+// import TripManagement from './components/TripManagement'
 import VehicleStatus from './components/VehicleStatus'
 import DriverPassengers from './components/DriverPassengers'
 
@@ -81,7 +81,6 @@ function normalizeTripStatus(raw: any): TripStatus {
 
 function normalizeServiceTime(raw: any): ServiceType {
   const s = safeString(raw, 'morning').toLowerCase().trim()
-  // if backend ever returns "both", default to morning in driver dashboard contexts
   return s === 'evening' ? 'evening' : 'morning'
 }
 
@@ -104,9 +103,9 @@ function displayLeg(trip: { pickup_location: string; dropoff_location: string; s
   return { from: pickup, to: dropoff }
 }
 
-function authHeaders(token: string | null) {
-  return token ? { Authorization: `Bearer ${token}` } : {}
-}
+// function authHeaders(token: string | null) {
+//   return token ? { Authorization: `Bearer ${token}` } : {}
+// }
 
 export default function DriverDashboardPage() {
   const router = useRouter()
@@ -136,20 +135,42 @@ export default function DriverDashboardPage() {
     setTimeout(() => setAlerts(prev => prev.filter(a => a.id !== id)), 4000)
   }
 
+  useEffect(() => {
+      const checkAuth = async () => {
+        try {
+          const res = await apiFetch("/me", {
+            credentials: "include",
+          });
+  
+          if (!res.ok) {
+            router.replace("/auth/signin");
+            return;
+          }
+  
+          const data = await res.json();
+          setUsername(data.name);
+        } catch (err) {
+          router.replace("/auth/signin");
+        }
+      };
+  
+      checkAuth();
+    }, [router]);
+
   const handleLogout = async () => {
     if (loggingOut) return
     setLoggingOut(true)
 
     try {
-      const token = localStorage.getItem('token')
+      // const token = localStorage.getItem('token')
       await apiFetch('/logout', {
         method: 'POST',
-        headers: authHeaders(token),
+        credentials: "include"
       })
     } catch (err) {
       console.error('Logout error:', err)
     } finally {
-      localStorage.removeItem('token')
+      // localStorage.removeItem('token')
       localStorage.removeItem('username')
       localStorage.removeItem('vehicle_id')
       localStorage.removeItem('user_id')
@@ -158,10 +179,9 @@ export default function DriverDashboardPage() {
     }
   }
 
-  const fetchVehicle = async (vehicleId: number, token: string) => {
+  const fetchVehicle = async (vehicleId: number) => {
     const res = await apiFetch(`/vehicles/${vehicleId}`, {
-      method: 'GET',
-      headers: authHeaders(token),
+      method: 'GET', credentials: 'include'
     })
     const data = await res.json().catch(() => ({}))
 
@@ -207,15 +227,13 @@ export default function DriverDashboardPage() {
     return []
   }
 
-  const fetchTripsForToday = async (vehicleId: number, token: string) => {
+  const fetchTripsForToday = async (vehicleId: number) => {
     const [morningRes, eveningRes] = await Promise.all([
       apiFetch(`/trips/today?vehicle_id=${vehicleId}&service_time=morning`, {
-        method: 'GET',
-        headers: authHeaders(token),
+        method: 'GET',credentials: 'include'
       }),
       apiFetch(`/trips/today?vehicle_id=${vehicleId}&service_time=evening`, {
-        method: 'GET',
-        headers: authHeaders(token),
+        method: 'GET',credentials: 'include'
       }),
     ])
 
@@ -239,38 +257,50 @@ export default function DriverDashboardPage() {
   const reloadAll = async () => {
     setLoading(true)
     try {
-      const token = localStorage.getItem('token')
-      if (!token) {
-        addAlert('error', 'Session expired. Please sign in again.')
-        setTrips([])
-        setVehicle(null)
-        router.replace('/auth/signin')
-        return
+      const res = await apiFetch("/me", {
+        credentials: "include",
+      });
+      if (!res.ok) {
+        addAlert("error", "Session expired. Please sign in again.");
+        setTrips([]);
+        setVehicle(null);
+        router.replace("/auth/signin");
+        return;
       }
 
-      setUsername(localStorage.getItem('username'))
+      const data = await res.json();
+      setUsername(data.name);
+      // // setUsername(localStorage.getItem('username'))
+      const vehicleIdRaw = data.vehicles?.id ?? localStorage.getItem('vehicle_id') ?? undefined
+      localStorage.setItem('vehicle_id', String(vehicleIdRaw ?? ''))
+      console.log(vehicleIdRaw)
 
-      const vehicleIdRaw = localStorage.getItem('vehicle_id')
       if (!vehicleIdRaw) {
-        addAlert('error', 'No vehicle assigned for this driver. Please sign in again.')
-        setTrips([])
-        setVehicle(null)
-        return
+        addAlert(
+          "error",
+          "No vehicle assigned for this driver. Please sign in again.",
+        );
+        setTrips([]);
+        setVehicle(null);
+        return;
       }
 
-      const vehicleId = Number(vehicleIdRaw)
+      const vehicleId = Number(vehicleIdRaw);
       if (!Number.isFinite(vehicleId)) {
-        addAlert('error', 'Invalid vehicle assignment. Please sign in again.')
-        setTrips([])
-        setVehicle(null)
-        return
+        addAlert("error", "Invalid vehicle assignment. Please sign in again.");
+        setTrips([]);
+        setVehicle(null);
+        return;
       }
 
-      const [v, t] = await Promise.all([fetchVehicle(vehicleId, token), fetchTripsForToday(vehicleId, token)])
-      setVehicle(v)
-      setTrips(t)
+      const [v, t] = await Promise.all([
+        fetchVehicle(vehicleId),
+        fetchTripsForToday(vehicleId),
+      ]);
+      setVehicle(v);
+      setTrips(t);
 
-      addAlert('info', `Loaded ${t.length} trip(s) for today.`)
+      addAlert("info", `Loaded ${t.length} trip(s) for today.`);
     } catch (err: any) {
       console.error(err)
       addAlert('error', err?.message || 'Failed to load driver data')
@@ -304,7 +334,6 @@ export default function DriverDashboardPage() {
       .reduce((sum, t) => sum + (Number.isFinite(t.seats_booked) ? t.seats_booked : 0), 0)
   }, [todayTrips])
 
-  // ✅ One source of truth for starting trips
   const startTrip = async (tripId: number) => {
     if (startingTripId) return
 
@@ -314,11 +343,11 @@ export default function DriverDashboardPage() {
     setTrips(prev => prev.map(t => (t.id === tripId ? { ...t, status: 'picked_up' } : t)))
 
     try {
-      const token = localStorage.getItem('token')
+      // const token = localStorage.getItem('token')
       await apiFetch(`/trips/${tripId}/pickup`, {
         method: 'PATCH',
         headers: {
-          ...authHeaders(token),
+          credentials: 'include',
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({}),
@@ -338,11 +367,11 @@ export default function DriverDashboardPage() {
     setTrips(prev => prev.map(t => (t.id === tripId ? { ...t, status: 'completed' } : t)))
 
     try {
-      const token = localStorage.getItem('token')
+      // const token = localStorage.getItem('token')
       await apiFetch(`/trips/${tripId}/dropoff`, {
         method: 'PATCH',
         headers: {
-          ...authHeaders(token),
+          credentials: 'include',
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({}),
@@ -542,18 +571,47 @@ export default function DriverDashboardPage() {
 
                 <TabsContent value="dashboard" className="mt-6">
                   <div className="space-y-8">
+                    {/* ✅ Removed TripManagement. Simple Current Trip card instead */}
                     {currentTrip ? (
-                      <TripManagement trip={currentTrip} onCompleteTrip={() => completeTrip(currentTrip.id)} onMarkPassenger={() => {}} />
+                      <Card className="border-slate-200 bg-white shadow-sm">
+                        <CardContent className="pt-6">
+                          <div className="flex flex-col md:flex-row items-center justify-between gap-6">
+                            <div className="flex items-center gap-4">
+                              <div className={`p-4 rounded-full ${currentTrip.service_type === 'morning' ? 'bg-amber-100 text-amber-600' : 'bg-indigo-100 text-indigo-600'}`}>
+                                {currentTrip.service_type === 'morning' ? <Sun className="w-8 h-8" /> : <Moon className="w-8 h-8" />}
+                              </div>
+
+                              <div>
+                                <h3 className="font-semibold text-lg text-slate-900">Trip In Progress</h3>
+                                <p className="text-slate-600">
+                                  {(() => {
+                                    const leg = displayLeg(currentTrip)
+                                    return (
+                                      <>
+                                        {shortPlace(leg.from)} → {shortPlace(leg.to)}
+                                      </>
+                                    )
+                                  })()}
+                                </p>
+                                <p className="text-sm text-slate-500 mt-1">{currentTrip.seats_booked} seat(s)</p>
+                              </div>
+                            </div>
+
+                            <Button
+                              onClick={() => completeTrip(currentTrip.id)}
+                              className="px-6 bg-emerald-600 hover:bg-emerald-700 text-white"
+                            >
+                              Complete Trip
+                            </Button>
+                          </div>
+                        </CardContent>
+                      </Card>
                     ) : upcomingTrip ? (
                       <Card className="border-slate-200 bg-white shadow-sm">
                         <CardContent className="pt-6">
                           <div className="flex flex-col md:flex-row items-center justify-between gap-6">
                             <div className="flex items-center gap-4">
-                              <div
-                                className={`p-4 rounded-full ${
-                                  upcomingTrip.service_type === 'morning' ? 'bg-amber-100 text-amber-600' : 'bg-indigo-100 text-indigo-600'
-                                }`}
-                              >
+                              <div className={`p-4 rounded-full ${upcomingTrip.service_type === 'morning' ? 'bg-amber-100 text-amber-600' : 'bg-indigo-100 text-indigo-600'}`}>
                                 {upcomingTrip.service_type === 'morning' ? <Sun className="w-8 h-8" /> : <Moon className="w-8 h-8" />}
                               </div>
                               <div>
@@ -614,12 +672,7 @@ export default function DriverDashboardPage() {
                           </CardTitle>
                         </CardHeader>
                         <CardContent>
-                          <ScheduleView
-                            schedule={morningTrips as any}
-                            onStartTrip={startTrip}
-                            onCompleteTrip={completeTrip}
-                            startingTripId={startingTripId}
-                          />
+                          <ScheduleView schedule={morningTrips as any} onStartTrip={startTrip} onCompleteTrip={completeTrip} startingTripId={startingTripId} />
                         </CardContent>
                       </Card>
 
@@ -636,12 +689,7 @@ export default function DriverDashboardPage() {
                           </CardTitle>
                         </CardHeader>
                         <CardContent>
-                          <ScheduleView
-                            schedule={eveningTrips as any}
-                            onStartTrip={startTrip}
-                            onCompleteTrip={completeTrip}
-                            startingTripId={startingTripId}
-                          />
+                          <ScheduleView schedule={eveningTrips as any} onStartTrip={startTrip} onCompleteTrip={completeTrip} startingTripId={startingTripId} />
                         </CardContent>
                       </Card>
                     </div>
@@ -690,13 +738,7 @@ export default function DriverDashboardPage() {
                       <CardTitle className="text-slate-900">My Schedule</CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <ScheduleView
-                        schedule={todayTrips as any}
-                        onStartTrip={startTrip}
-                        onCompleteTrip={completeTrip}
-                        showAll
-                        startingTripId={startingTripId}
-                      />
+                      <ScheduleView schedule={todayTrips as any} onStartTrip={startTrip} onCompleteTrip={completeTrip} showAll startingTripId={startingTripId} />
                     </CardContent>
                   </Card>
                 </TabsContent>

@@ -21,6 +21,18 @@ def admin_required(fn):
         return fn(*args, **kwargs)
     return wrapper
 
+def admin_required(fn):
+    @wraps(fn)
+    @jwt_required()
+    def wrapper(*args, **kwargs):
+        identity = get_jwt_identity()
+
+        if identity.get("role_id") != 1:
+            return {"error": "Admins only"}, 403
+
+        return fn(*args, **kwargs)
+    return wrapper
+
 def serialize_route(route):
     """
     Serialize route with geofence data
@@ -38,8 +50,11 @@ def serialize_route(route):
 
 
 class RouteList(Resource):
+<<<<<<< HEAD
     """Get all routes or create new route"""
 
+=======
+>>>>>>> dev
     @jwt_required()
     def get(self):
         """Get all routes"""
@@ -101,8 +116,12 @@ class RouteList(Resource):
 
 
 class RouteDetail(Resource):
+<<<<<<< HEAD
     """Handle single route operations"""
 
+=======
+    # Handle single route operations
+>>>>>>> dev
     @jwt_required()
     def get(self, route_id):
         """Get single route by ID"""
@@ -178,7 +197,10 @@ class RouteDetail(Resource):
         response["message"] = "Route updated successfully"
         
         return response, 200
+<<<<<<< HEAD
     
+=======
+>>>>>>> dev
     @admin_required
     def delete(self, route_id):
         """Delete route"""

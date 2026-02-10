@@ -5,7 +5,7 @@ from routes.pickup_locations import PickupLocationDetail
 from models import db 
 from flask_migrate import Migrate
 from flask_jwt_extended import JWTManager
-from routes.auth import Login, Signup, Logout
+from routes.auth import Login, Signup, Logout, Me
 from routes.user import CreateDriver, GetDrivers, GetUsers, UpdateUser, DeleteUser, CreateAdmin
 from routes.user_role import UserRoleList, UserRoleDetail
 
@@ -27,6 +27,14 @@ def create_app():
     
     app.secret_key = "super-secret-key"
     app.config["JWT_SECRET_KEY"] = "super-secret-key"
+    
+    app.config["JWT_TOKEN_LOCATION"] = ["cookies"]
+    app.config["JWT_ACCESS_COOKIE_NAME"] = "access_token_cookie"
+    app.config["JWT_COOKIE_SECURE"] = False
+    app.config["JWT_COOKIE_CSRF_PROTECT"] = False
+    app.config["JWT_COOKIE_SAMESITE"] = "Lax"
+    app.config["JWT_COOKIE_SECURE"] = False
+    
     jwt = JWTManager(app)
 
     db.init_app(app)
@@ -43,6 +51,7 @@ def create_app():
     api.add_resource(Login, '/login')
     api.add_resource(Signup, '/signup')
     api.add_resource(Logout, '/logout')
+    api.add_resource(Me, '/me')
     
     api.add_resource(CreateDriver, '/drivers')
     api.add_resource(GetDrivers, '/drivers')

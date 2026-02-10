@@ -1,6 +1,6 @@
-from flask import Flask, request, session
+from flask import Flask, request, session, make_response
 from flask_restful import Resource
-from flask_jwt_extended import create_access_token
+from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity, verify_jwt_in_request, unset_jwt_cookies, set_access_cookies
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from models import db, User, UserRole
@@ -17,19 +17,23 @@ class Login(Resource):
         if user and check_password_hash(user.password_hash, password):
             # session["user_id"] = user.id
             access_token = create_access_token(identity={"id": user.id, "role_id": user.role_id})
-            return {
-            "message": "Login successful",
-            "access_token": access_token,
-            "user": {
-                "id": user.id,
-                "name": user.name,
-                "email": user.email,
-                "role_id": user.role_id,
-                "role": user.role.name
-            }
-        }
+            response = make_response({
+                "message": "Login successful",
+                "user": {
+                    "id": user.id,
+                    "name": user.name,
+                    "email": user.email,
+                    "role_id": user.role_id,
+                    "role": user.role.name
+                }
+            }, 200)
+            set_access_cookies(response, access_token)
+
+
+            return response
         else:
             return {"message": "Invalid credentials"}, 401
+
 
 class Signup(Resource):
     def post(self):
@@ -72,4 +76,19 @@ class Signup(Resource):
 class Logout(Resource):
     def post(self):
         # session.pop("user_id", None)
-        return {"message": "Logout successful"}, 200
+        response = make_response({"message": "Logged out"}, 200)
+        unset_jwt_cookies(response)
+        return response
+    
+class Me(Resource):
+    @jwt_required()
+    def get(self):
+        identity = get_jwt_identity()
+        user = User.query.get(identity["id"])
+
+        return {
+            "id": user.id,
+            "name": user.name,
+            "email": user.email,
+            "role": user.role.name
+        }

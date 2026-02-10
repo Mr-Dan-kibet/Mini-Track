@@ -217,16 +217,16 @@ export default function BookingsManagement() {
         return
       }
 
-      const headers: HeadersInit = {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      }
+      // const headers: HeadersInit = {
+      //   'Content-Type': 'application/json',
+      //   credentials: 'include',
+      // }
 
       const [bookingsRes, routesRes, pickupsRes, schoolsRes] = await Promise.all([
-        apiFetch('/bookings', { headers }),
-        apiFetch('/routes', { headers }),
-        apiFetch('/pickup_locations', { headers }).catch(() => null as any),
-        apiFetch('/school-locations/all', { headers }).catch(() => null as any),
+        apiFetch('/bookings', { credentials: 'include' }),
+        apiFetch('/routes', { credentials: 'include' }),
+        apiFetch('/pickup_locations', { credentials: 'include' }).catch(() => null as any),
+        apiFetch('/school-locations/all', { credentials: 'include' }).catch(() => null as any),
       ])
 
       const [bookingsJson, routesJson, pickupsJson, schoolsJson] = await Promise.all([

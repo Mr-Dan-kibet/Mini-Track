@@ -2,11 +2,24 @@ from flask import request
 from flask_restful import Resource
 from models import db, PickupLocation, Route
 from sqlalchemy.exc import IntegrityError
+from flask_jwt_extended import jwt_required, get_jwt_identity
+from functools import wraps
 
+def admin_required(fn):
+    @wraps(fn)
+    @jwt_required()
+    def wrapper(*args, **kwargs):
+        identity = get_jwt_identity()
+
+        if identity.get("role_id") != 1:
+            return {"error": "Admins only"}, 403
+
+        return fn(*args, **kwargs)
+    return wrapper
 
 class PickupLocationList(Resource):
     """Handle GET all and POST for pickup locations"""
-    
+    @jwt_required()
     def get(self):
         """
         Get all pickup locations
@@ -36,7 +49,7 @@ class PickupLocationList(Resource):
             
         except Exception as e:
             return {'error': str(e)}, 500
-    
+    @admin_required
     def post(self):
         """
         Create a new pickup location
@@ -91,7 +104,7 @@ class PickupLocationList(Resource):
 
 class PickupLocationDetail(Resource):
     """Handle GET, PUT, PATCH, DELETE for a specific pickup location"""
-    
+    @jwt_required()
     def get(self, id):
         """Get a specific pickup location by ID"""
         try:
@@ -113,15 +126,15 @@ class PickupLocationDetail(Resource):
             
         except Exception as e:
             return {'error': str(e)}, 500
-    
+    @admin_required
     def put(self, id):
         """Update a pickup location (full update)"""
         return self._update(id)
-    
+    @admin_required
     def patch(self, id):
         """Update a pickup location (partial update)"""
         return self._update(id)
-    
+    @admin_required
     def _update(self, id):
         """
         Update a pickup location
@@ -173,7 +186,7 @@ class PickupLocationDetail(Resource):
         except Exception as e:
             db.session.rollback()
             return {'error': str(e)}, 500
-    
+    @admin_required
     def delete(self, id):
         """
         Delete a pickup location
@@ -207,7 +220,7 @@ class PickupLocationDetail(Resource):
 
 class PickupLocationByRoute(Resource):
     """Get all pickup locations for a specific route"""
-    
+    @jwt_required()
     def get(self, route_id):
         """Get all pickup locations for a specific route"""
         try:
@@ -239,7 +252,7 @@ class PickupLocationByRoute(Resource):
 
 class PickupLocationBulk(Resource):
     """Bulk create pickup locations"""
-    
+    @admin_required
     def post(self):
         """
         Create multiple pickup locations at once

@@ -60,7 +60,7 @@ export default function SchoolLocationManagement() {
 
   const fetchRoutes = async () => {
     try {
-      const res = await apiFetch('/routes')
+      const res = await apiFetch('/routes', { credentials: 'include' })
       const data = await res.json()
       const arr = normalizeToArray<Route>(data, ['routes'])
       setRoutes(arr)
@@ -72,7 +72,7 @@ export default function SchoolLocationManagement() {
 
   const fetchLocations = async () => {
     try {
-      const res = await apiFetch('/school-locations/all')
+      const res = await apiFetch('/school-locations/all', { credentials: 'include' })
       const data = await res.json()
       const arr = normalizeToArray<SchoolLocation>(data, ['school_locations'])
       setLocations(arr)
@@ -119,6 +119,8 @@ export default function SchoolLocationManagement() {
 
     const res = await apiFetch('/school-locations', {
       method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     })
 
@@ -156,6 +158,7 @@ export default function SchoolLocationManagement() {
     try {
       const res = await apiFetch(`/school-locations/${editing.id}`, {
         method: 'PUT',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       })
@@ -178,7 +181,8 @@ export default function SchoolLocationManagement() {
 
   const handleDelete = async (id: number) => {
     try {
-      const res = await apiFetch(`/school-locations/${id}`, { method: 'DELETE' })
+      const res = await apiFetch(`/school-locations/${id}`,
+        { method: 'DELETE', credentials: 'include' })
       const data = await res.json()
 
       if (!res.ok) {

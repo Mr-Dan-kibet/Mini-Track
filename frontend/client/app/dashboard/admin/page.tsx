@@ -25,34 +25,42 @@ export default function AdminDashboardPage() {
   const [loggingOut, setLoggingOut] = useState(false)
 
   useEffect(() => {
-    const token = localStorage.getItem('token')
-    const storedUsername = localStorage.getItem('username')
+    const checkAuth = async () => {
+      try {
+        const res = await apiFetch("/me", {
+          credentials: "include",
+        });
 
-    if (!token) {
-      router.replace('/auth/signin')
-      return
-    }
+        if (!res.ok) {
+          router.replace("/auth/signin");
+          return;
+        }
 
-    setUsername(storedUsername)
-  }, [router])
+        const data = await res.json();
+        setUsername(data.name);
+      } catch (err) {
+        router.replace("/auth/signin");
+      }
+    };
+
+    checkAuth();
+  }, [router]);
 
   const handleLogout = async () => {
     if (loggingOut) return
     setLoggingOut(true)
 
     try {
-      const token = localStorage.getItem('token')
+      // const token = localStorage.getItem('token')
 
-      await apiFetch('/logout', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      })
+      await apiFetch("/logout", {
+        method: "POST",
+        credentials: "include",
+      });
     } catch (err) {
       console.error('Logout error:', err)
     } finally {
-      localStorage.removeItem('token')
+      // localStorage.removeItem('token')
       localStorage.removeItem('username')
 
       setLoggingOut(false)

@@ -125,12 +125,12 @@ export default function VehicleManagement() {
   const [editRouteId, setEditRouteId] = useState<string>('')
   const [editDriverId, setEditDriverId] = useState<string>('')
 
-  const authHeaders = useMemo(() => {
-    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null
-    const headers: HeadersInit = { 'Content-Type': 'application/json' }
-    if (token) headers.Authorization = `Bearer ${token}`
-    return headers
-  }, [])
+  // const authHeaders = useMemo(() => {
+  //   // const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null
+    
+  //   const headers: HeadersInit = { 'Content-Type': 'application/json', credentials: 'include' }
+  //   return headers
+  // }, [])
 
   const fetchAll = async () => {
     setLoading(true)
@@ -138,9 +138,9 @@ export default function VehicleManagement() {
 
     try {
       const [vehRes, routesRes, driversRes] = await Promise.all([
-        apiFetch('/vehicles', { headers: authHeaders }),
-        apiFetch('/routes', { headers: authHeaders }),
-        apiFetch('/drivers', { headers: authHeaders }),
+        apiFetch('/vehicles', { credentials: 'include' }),
+        apiFetch('/routes', { credentials: 'include' }),
+        apiFetch('/drivers', { credentials: 'include' }),
       ])
 
       const [vehJson, routesJson, driversJson] = await Promise.all([
@@ -231,7 +231,7 @@ export default function VehicleManagement() {
     try {
       const res = await apiFetch('/vehicles', {
         method: 'POST',
-        headers: authHeaders,
+        headers: { 'Content-Type': 'application/json', credentials: 'include' },
         body: JSON.stringify({
           route_id: Number.isFinite(Number(newRouteId)) ? Number(newRouteId) : newRouteId,
           user_id: Number.isFinite(Number(newDriverId)) ? Number(newDriverId) : newDriverId,
@@ -266,7 +266,7 @@ export default function VehicleManagement() {
     try {
       const res = await apiFetch(`/vehicles/${editId}`, {
         method: 'PATCH',
-        headers: authHeaders,
+        headers: { 'Content-Type': 'application/json', credentials: 'include' },
         body: JSON.stringify({
           route_id: Number.isFinite(Number(editRouteId)) ? Number(editRouteId) : editRouteId,
           user_id: Number.isFinite(Number(editDriverId)) ? Number(editDriverId) : editDriverId,
@@ -294,7 +294,7 @@ export default function VehicleManagement() {
     try {
       const res = await apiFetch(`/vehicles/${id}`, {
         method: 'DELETE',
-        headers: authHeaders,
+        headers: { credentials: 'include' },
       })
 
       const json = await res.json().catch(() => ({}))

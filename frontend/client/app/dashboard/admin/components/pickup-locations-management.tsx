@@ -60,7 +60,7 @@ export default function PickupLocationsManagement() {
 
   const fetchRoutes = async () => {
     try {
-      const res = await apiFetch('/routes')
+      const res = await apiFetch('/routes',{ credentials: 'include' })
       const data = await res.json()
       const arr = normalizeToArray<Route>(data, ['routes'])
       setRoutes(arr)
@@ -72,7 +72,7 @@ export default function PickupLocationsManagement() {
 
   const fetchLocations = async () => {
     try {
-      const res = await apiFetch('/pickup_locations')
+      const res = await apiFetch('/pickup_locations',{ credentials: 'include' })
       const data = await res.json()
       const arr = normalizeToArray<PickupLocation>(data, ['pickup_locations'])
       setLocations(arr)
@@ -120,6 +120,8 @@ export default function PickupLocationsManagement() {
 
       const res = await apiFetch('/pickup_locations', {
         method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       })
 
@@ -161,6 +163,7 @@ export default function PickupLocationsManagement() {
     try {
       const res = await apiFetch(`/pickup_locations/${editing.id}`, {
         method: 'PUT',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       })
@@ -182,7 +185,8 @@ export default function PickupLocationsManagement() {
 
   const handleDelete = async (id: number) => {
     try {
-      const res = await apiFetch(`/pickup_locations/${id}`, { method: 'DELETE' })
+      const res = await apiFetch(`/pickup_locations/${id}`,
+        { method: 'DELETE', credentials: 'include' })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) {
         alert(data.error || data.message || 'Delete failed')

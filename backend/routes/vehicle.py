@@ -1,8 +1,24 @@
 from flask import request
 from flask_restful import Resource
 from models import db, Vehicle, Route, User
+from flask_jwt_extended import jwt_required, get_jwt_identity
+from functools import wraps
 
 # 1. HELPER FUNCTIONS
+
+def admin_required(fn):
+    @wraps(fn)
+    @jwt_required()
+    def wrapper(*args, **kwargs):
+        identity = get_jwt_identity()
+
+        if identity.get("role_id") != 1:
+            return {"error": "Admins only"}, 403
+
+        return fn(*args, **kwargs)
+    return wrapper
+
+
 
 def serialize_vehicle(vehicle):
     return {
@@ -15,6 +31,7 @@ def serialize_vehicle(vehicle):
         "model": vehicle.model,
         "capacity": vehicle.capacity
     }
+
 
 class VehicleList(Resource):
 
@@ -39,6 +56,7 @@ class VehicleList(Resource):
         
         return response, 200
     
+    @admin_required
     def post(self):
         # create a vehicle
         data = request.get_json()
@@ -89,7 +107,7 @@ class VehicleList(Resource):
 
 class VehicleDetail(Resource):
     # Handle single vehicle operations
-
+  
     def get(self, vehicle_id):
         # Get single vehicle by ID
 
@@ -101,6 +119,7 @@ class VehicleDetail(Resource):
         response = serialize_vehicle(vehicle)
         return response, 200  
     
+    @admin_required
     def patch(self, vehicle_id):
         # Update vehicle
 
@@ -157,6 +176,7 @@ class VehicleDetail(Resource):
         
         return response, 200
     
+    @admin_required
     def delete(self, vehicle_id):
         """
         Delete vehicle

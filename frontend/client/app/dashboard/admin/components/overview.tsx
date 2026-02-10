@@ -115,21 +115,21 @@ export default function OverviewSection() {
       setError(null)
 
       try {
-        const token = localStorage.getItem('token')
+        // const token = localStorage.getItem('token')
 
-        if (!token) {
-          throw new Error('Missing token. Please sign in again.')
+     const res = await apiFetch("/me", {
+          credentials: "include",
+        });
+
+        if (!res.ok) {
+          throw new Error("Missing token. Please sign in again.");
         }
 
-        const headers: HeadersInit = {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        }
 
         const [driversRes, routesRes, vehiclesRes] = await Promise.all([
-          apiFetch('/drivers', { headers }),
-          apiFetch('/routes', { headers }),
-          apiFetch('/vehicles', { headers }),
+          apiFetch('/drivers', { credentials: 'include' }),
+          apiFetch('/routes', { credentials: 'include' }),
+          apiFetch('/vehicles', { credentials: 'include' }),
         ])
 
         if (!driversRes.ok) throw new Error(`Drivers fetch failed (${driversRes.status})`)
@@ -148,7 +148,7 @@ export default function OverviewSection() {
 
         // Optional bookings: if endpoint exists use it; otherwise keep empty list.
         try {
-          const bookingsRes = await apiFetch('/bookings', { headers })
+          const bookingsRes = await apiFetch('/bookings', { credentials: 'include' })
           if (bookingsRes.ok) {
             const bookingsJson = await bookingsRes.json()
             const rawBookings = toArray(bookingsJson)

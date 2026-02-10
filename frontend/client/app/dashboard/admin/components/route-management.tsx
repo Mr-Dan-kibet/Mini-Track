@@ -58,11 +58,22 @@ export default function RouteManagement() {
     route_radius_km: 5.0,
   })
 
+<<<<<<< HEAD
   const fetchRoutes = async () => {
     try {
       const res = await apiFetch("/routes", { credentials: 'include' })
       const data = await res.json()
       setRoutes(data)
+=======
+    const fetchRoutes = async () => {
+      // const token = localStorage.getItem("token");
+      // console.log (token)
+    try {
+      const res = await apiFetch("/routes", { credentials: 'include' });
+  
+      const data = await res.json();
+      setRoutes(data);
+>>>>>>> dev
     } catch (err) {
       console.error("Failed to fetch routes", err)
     }
@@ -83,6 +94,7 @@ export default function RouteManagement() {
   }, [routes, searchTerm])
 
   const handleDelete = async (id: number) => {
+<<<<<<< HEAD
     try {
       const res = await apiFetch(`/routes/${id}`, {
         method: "DELETE",
@@ -94,6 +106,14 @@ export default function RouteManagement() {
       if (!res.ok) {
         alert(data.message || "Delete failed")
         return
+=======
+  try {
+    const res = await apiFetch(
+      `/routes/${id}`,
+      {
+        method: "DELETE",
+        credentials: 'include'
+>>>>>>> dev
       }
 
       setRoutes(prev => prev.filter(v => v.id !== id))
@@ -109,6 +129,7 @@ export default function RouteManagement() {
       return
     }
 
+<<<<<<< HEAD
     // ✅ Validate GPS format if provided
     if (addForm.starting_point_gps) {
       const parts = addForm.starting_point_gps.split(',')
@@ -116,6 +137,33 @@ export default function RouteManagement() {
         alert('Invalid starting point GPS format. Use: latitude,longitude (e.g., -1.2921,36.8219)')
         return
       }
+=======
+    setRoutes(prev => prev.filter(v => v.id !== id))
+
+  } catch (err) {
+    console.error(err)
+    alert("Server error")
+  }
+}
+
+  const handleAdd = async() => {
+    if (!addForm.name || !addForm.starting_point || !addForm.ending_point) return
+
+    // Backend payload matches JSON exactly
+    const payload = { ...addForm }
+
+    // const token = localStorage.getItem("token");
+
+     const res = await apiFetch("/routes", {
+       method: "POST",
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+      });
+
+    if (res.ok) {
+      fetchRoutes();   
+>>>>>>> dev
     }
 
     if (addForm.ending_point_gps) {
@@ -177,8 +225,36 @@ export default function RouteManagement() {
 
   const handleSave = async() => {
     if (!editing) return
+<<<<<<< HEAD
     if (!editForm.name || !editForm.starting_point || !editForm.ending_point) {
       alert('Please fill in all required fields')
+=======
+    if (!editForm.name || !editForm.starting_point || !editForm.ending_point) return
+
+    const payload = {
+    name: editForm.name,
+    starting_point: editForm.starting_point,
+    ending_point: editForm.ending_point,
+  }
+
+  
+  try {
+    // const token = localStorage.getItem("token")
+
+    const res = await apiFetch(`/routes/${editing.id}`,
+      {
+        method: "PATCH",
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      }
+    )
+
+    const data = await res.json()
+
+    if (!res.ok) {
+      alert(data.error || "Update failed")
+>>>>>>> dev
       return
     }
 

@@ -1,6 +1,8 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { apiFetch } from '@/lib/api'
+import { useRouter } from 'next/navigation'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
 import {
@@ -76,6 +78,7 @@ export default function ParentDashboardPage() {
   })
 
   const [userName, setUserName] = useState('Guest')
+  const router = useRouter()
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState('overview')
   const [trackingBookingId, setTrackingBookingId] = useState<number | null>(null)
@@ -86,11 +89,22 @@ export default function ParentDashboardPage() {
     fetchDashboardSummary()
   }, [])
 
-  const fetchUserData = () => {
+  const fetchUserData = async () => {
     try {
-      const fullName = localStorage.getItem('username') || 'Guest'
+      const res = await apiFetch("/me", {
+              credentials: "include",
+            });
+      // const fullName = localStorage.getItem('username') || 'Guest'
+      if (!res.ok) {
+          router.replace("/auth/signin");
+          return;
+        }
+      const data = await res.json();
+      const fullName = data.name
+      // extracting the first name only
       const firstName = fullName.split(' ')[0]
       setUserName(firstName)
+      
     } catch (err) {
       console.error('User data error:', err)
       setUserName('Guest')
@@ -112,8 +126,7 @@ export default function ParentDashboardPage() {
         credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${localStorage.getItem('token') || ''}`,
-        },
+        }
       })
 
       if (!res.ok) throw new Error('Failed to fetch bookings')
@@ -161,18 +174,19 @@ export default function ParentDashboardPage() {
     }
   }
 
+  
   // ---------------- LOGOUT ----------------
   const handleLogout = async () => {
     try {
       await fetch(`${BASE_URL}/logout`, {
-        method: 'DELETE',
+        method: 'POST',
         credentials: 'include',
       })
     } catch (err) {
       console.error('Logout error:', err)
     } finally {
       // Clear all user data from localStorage
-      localStorage.removeItem('token')
+      // localStorage.removeItem('token')
       localStorage.removeItem('username')
       localStorage.removeItem('user_id')
       localStorage.removeItem('access_token')

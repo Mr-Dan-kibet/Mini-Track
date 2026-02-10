@@ -50,15 +50,10 @@ export default function DriverManagement() {
   })
 
   const fetchDrivers = async () => {
-    const token = localStorage.getItem('token')
+    // const token = localStorage.getItem('token')
 
     try {
-      const res = await apiFetch('/drivers', {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-      })
+      const res = await apiFetch('/drivers', { credentials: 'include' })
 
       const data = await res.json()
       setDrivers(Array.isArray(data) ? data : [])
@@ -86,7 +81,7 @@ export default function DriverManagement() {
   const handleAdd = async () => {
     if (!addForm.name || !addForm.email || !addForm.phone_number || !addForm.password) return
 
-    const token = localStorage.getItem('token')
+    // const token = localStorage.getItem('token')
 
     const payload = {
       name: addForm.name,
@@ -99,9 +94,9 @@ export default function DriverManagement() {
       const res = await apiFetch('/drivers', {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
+        credentials:"include",
         body: JSON.stringify(payload),
       })
 
@@ -137,7 +132,7 @@ export default function DriverManagement() {
     if (!editing) return
     if (!editForm.name || !editForm.email || !editForm.phone_number) return
 
-    const token = localStorage.getItem('token')
+    // const token = localStorage.getItem('token')
 
     const payload: any = {
       id: editing.id, // many backends ignore this; harmless if allowed
@@ -152,7 +147,7 @@ export default function DriverManagement() {
       const res = await apiFetch(`/users/${editing.id}`, {
         method: 'PUT',
         headers: {
-          Authorization: `Bearer ${token}`,
+          credentials: 'include',
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(payload),
@@ -183,7 +178,7 @@ export default function DriverManagement() {
       const res = await apiFetch(`/users/${id}`, {
         method: 'DELETE',
         headers: {
-          Authorization: `Bearer ${token}`,
+          credentials: 'include',
         },
       })
 
