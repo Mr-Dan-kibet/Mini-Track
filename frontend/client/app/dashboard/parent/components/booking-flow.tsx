@@ -433,9 +433,13 @@ export default function BookingFlow() {
   }
 
   const isDateSelected = (date: Date) => {
-    const dateStr = date.toISOString().split('T')[0]
-    return form.selected_dates.includes(dateStr)
-  }
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  const dateStr = `${year}-${month}-${day}`
+  
+  return form.selected_dates.includes(dateStr)
+}
 
   const isDateDisabled = (date: Date) => {
     const today = new Date()
@@ -446,8 +450,11 @@ export default function BookingFlow() {
   const toggleDate = (date: Date) => {
     if (isDateDisabled(date)) return
     
-    const dateStr = date.toISOString().split('T')[0]
-    
+  const year = date.getFullYear()           // 2026
+  const month = String(date.getMonth() + 1).padStart(2, '0')  // "02"
+  const day = String(date.getDate()).padStart(2, '0')         // "10"
+  const dateStr = `${year}-${month}-${day}`  // "2026-02-10" ✅
+
     setForm(prev => {
       const isSelected = prev.selected_dates.includes(dateStr)
       const newDates = isSelected
