@@ -110,6 +110,7 @@ type Booking = {
   start_date: string
   end_date: string
   seats_booked: number
+  service_type: string  // ✅ ADDED - critical for service type checking
   selected_seats?: number[]
 }
 
@@ -211,11 +212,12 @@ export default function BookingFlow() {
     }
   }, [form.route_id])
 
+  // ✅ UPDATED: Added form.service_type dependency
   useEffect(() => {
-    if (selectedVehicle && form.selected_dates.length > 0) {
+    if (selectedVehicle && form.selected_dates.length > 0 && form.service_type) {
       fetchAvailableSeats()
     }
-  }, [selectedVehicle, form.selected_dates])
+  }, [selectedVehicle, form.selected_dates, form.service_type])
 
   // Auto-redirect countdown after successful booking
   useEffect(() => {
@@ -284,8 +286,9 @@ export default function BookingFlow() {
     }
   }
 
+  // ✅ UPDATED: Service-type-aware seat availability checking
   const fetchAvailableSeats = async () => {
-    if (!selectedVehicle || form.selected_dates.length === 0) return
+    if (!selectedVehicle || form.selected_dates.length === 0 || !form.service_type) return
 
     setLoadingSeats(true)
     try {
@@ -294,9 +297,13 @@ export default function BookingFlow() {
       
       const bookings: Booking[] = Array.isArray(data) ? data : []
       
+      // ✅ Calculate availability by service type
       let maxBookedSeats = 0
       
       form.selected_dates.forEach(selectedDate => {
+        let morningSeats = 0
+        let eveningSeats = 0
+        
         const dateBookings = bookings.filter((booking: Booking) => {
           if (booking.status !== 'active') return false
           
@@ -307,12 +314,42 @@ export default function BookingFlow() {
           return checkDate >= bookingStart && checkDate <= bookingEnd
         })
         
-        const totalSeatsOnDate = dateBookings.reduce((sum, b) => sum + b.seats_booked, 0)
-        maxBookedSeats = Math.max(maxBookedSeats, totalSeatsOnDate)
+        // ✅ Count seats by service type
+        dateBookings.forEach(booking => {
+          const seats = booking.seats_booked || 0
+          
+          if (booking.service_type === 'morning' || booking.service_type === 'both') {
+            morningSeats += seats
+          }
+          if (booking.service_type === 'evening' || booking.service_type === 'both') {
+            eveningSeats += seats
+          }
+        })
+        
+        // ✅ Calculate max based on what user is booking
+        let seatsUsedForThisDate = 0
+        
+        if (form.service_type === 'morning') {
+          seatsUsedForThisDate = morningSeats
+        } else if (form.service_type === 'evening') {
+          seatsUsedForThisDate = eveningSeats
+        } else if (form.service_type === 'both') {
+          // For 'both', need seats in BOTH time slots
+          seatsUsedForThisDate = Math.max(morningSeats, eveningSeats)
+        }
+        
+        maxBookedSeats = Math.max(maxBookedSeats, seatsUsedForThisDate)
       })
       
       const available = selectedVehicle.capacity - maxBookedSeats
       setAvailableSeats(Math.max(0, available))
+      
+      console.log('📊 Seat availability:', {
+        service_type: form.service_type,
+        capacity: selectedVehicle.capacity,
+        max_booked: maxBookedSeats,
+        available: available
+      })
       
       if (form.seats_booked > available) {
         setForm(prev => ({ ...prev, seats_booked: Math.max(1, available) }))
