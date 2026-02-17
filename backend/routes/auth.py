@@ -31,7 +31,7 @@ class Login(Resource):
 
             return response
         else:
-            return {"message": "Invalid credentials"}, 401
+            return {"error": "Invalid credentials"}, 401
 
 
 class Signup(Resource):
