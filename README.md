@@ -16,6 +16,11 @@ Mini-Track addresses these challenges by digitizing:
 * Trip monitoring and updates
 
 ---
+# **Live Link**
+
+https://mini-track-two.vercel.app/
+
+---
 
 ## ** Objectives**
 
@@ -267,8 +272,7 @@ They include:
 
 ---
 
-# **Live Link**
-https://mini-track-two.vercel.app/
+
 
 
 
